@@ -240,6 +240,51 @@ check_openclaw_installed() {
     command -v openclaw &> /dev/null
 }
 
+# 自动修复运行环境（npm/路径/配置目录/doctor）
+auto_fix_runtime_environment() {
+    echo ""
+    log_info "执行环境自动修复..."
+
+    mkdir -p "$CONFIG_DIR" "$BACKUP_DIR" 2>/dev/null || true
+    chmod 700 "$CONFIG_DIR" 2>/dev/null || true
+
+    # 修复 npm 常见权限与缓存问题
+    if command -v npm &> /dev/null; then
+        npm cache verify > /dev/null 2>&1 || npm cache clean --force > /dev/null 2>&1 || true
+
+        local npm_prefix
+        npm_prefix=$(npm config get prefix 2>/dev/null) || true
+        if [ -n "$npm_prefix" ] && [ -d "$npm_prefix/bin" ]; then
+            case ":$PATH:" in
+                *":$npm_prefix/bin:"*) ;;
+                *) export PATH="$npm_prefix/bin:$PATH" ;;
+            esac
+        fi
+
+        # 如果是 EACCES 常见场景，设置用户级全局目录
+        if [ ! -w "${npm_prefix:-$HOME}" ] 2>/dev/null; then
+            mkdir -p "$HOME/.npm-global" 2>/dev/null || true
+            npm config set prefix "$HOME/.npm-global" > /dev/null 2>&1 || true
+            export PATH="$HOME/.npm-global/bin:$PATH"
+        fi
+    fi
+
+    # OpenClaw 在 PATH 中找不到时，尝试从 npm 全局目录恢复
+    if ! check_openclaw_installed && command -v npm &> /dev/null; then
+        local np
+        np=$(npm config get prefix 2>/dev/null) || true
+        if [ -n "$np" ] && [ -x "$np/bin/openclaw" ]; then
+            export PATH="$np/bin:$PATH"
+        fi
+    fi
+
+    # 配置文件自修复
+    if check_openclaw_installed; then
+        ensure_openclaw_init
+        yes | openclaw doctor --fix > /dev/null 2>&1 || true
+    fi
+}
+
 # 重启 Gateway 使渠道配置生效
 restart_gateway_for_channel() {
     echo ""
@@ -400,9 +445,18 @@ test_telegram_bot() {
         return 1
     fi
     
-    # 2. 发送测试消息
+    # 2. 可选发送测试消息
     echo ""
-    echo -e "${YELLOW}2. 发送测试消息...${NC}"
+    echo -e "${YELLOW}2. 测试消息发送...${NC}"
+
+    if [ -z "$user_id" ]; then
+        log_warn "未提供 User ID，跳过发送测试消息"
+        echo ""
+        echo -e "${CYAN}获取 User ID 官方方式:${NC}"
+        echo -e "  ${WHITE}curl \"https://api.telegram.org/bot<token>/getUpdates\"${NC}"
+        echo -e "  或在收到消息后运行: ${WHITE}openclaw logs --follow${NC} 查看 from.id"
+        return 0
+    fi
     
     local message="🦞 OpenClaw 测试消息
 
@@ -426,7 +480,7 @@ test_telegram_bot() {
         local error=$(echo "$send_result" | python3 -c "import sys,json; print(json.load(sys.stdin).get('description', '未知错误'))" 2>/dev/null)
         log_error "消息发送失败: $error"
         echo ""
-        echo -e "${YELLOW}提示: 请确保你已经先向机器人发送过消息${NC}"
+        echo -e "${YELLOW}提示: 请先私聊机器人一条消息，再重试发送测试${NC}"
         return 1
     fi
 }
@@ -961,10 +1015,13 @@ config_ai_model() {
     print_menu_item "15" "Google Gemini CLI" "🧪"
     print_menu_item "16" "Google Antigravity" "🚀"
     echo ""
+    echo -e "${WHITE}高级自定义:${NC}"
+    print_menu_item "17" "自定义 Provider + 自定义模型" "🛠️"
+    echo ""
     print_menu_item "0" "返回主菜单" "↩️"
     echo ""
-    
-    echo -en "${YELLOW}请选择 [0-16]: ${NC}"
+
+    echo -en "${YELLOW}请选择 [0-17]: ${NC}"
     read choice < "$TTY_INPUT"
     
     case $choice in
@@ -984,6 +1041,7 @@ config_ai_model() {
         14) config_minimax ;;
         15) config_google_gemini_cli ;;
         16) config_google_antigravity ;;
+        17) config_custom_provider_model ;;
         0) return ;;
         *) log_error "无效选择"; press_enter; config_ai_model ;;
     esac
@@ -1240,6 +1298,83 @@ config_openai() {
         test_ai_connection "openai" "$api_key" "$model" "$base_url"
     fi
     
+    press_enter
+}
+
+config_custom_provider_model() {
+    clear_screen
+    print_header
+
+    echo -e "${WHITE}🛠️ 配置自定义 Provider + 自定义模型${NC}"
+    print_divider
+    echo ""
+    echo -e "${CYAN}适用场景:${NC}"
+    echo "  1. 使用非官方模型服务 (OneAPI/NewAPI/企业网关等)"
+    echo "  2. 自定义 BASE_URL + 自定义模型名"
+    echo "  3. 指定 API 兼容协议"
+    echo ""
+
+    local provider_name=""
+    local api_key=""
+    local base_url=""
+    local model=""
+    local extra_models=""
+    local api_type=""
+
+    read -p "$(echo -e "${YELLOW}输入 Provider 名称 (如 my-gateway): ${NC}")" provider_name < "$TTY_INPUT"
+    provider_name=${provider_name:-custom-provider}
+
+    read -p "$(echo -e "${YELLOW}输入 API 地址 (如 https://api.example.com/v1): ${NC}")" base_url < "$TTY_INPUT"
+    if [ -z "$base_url" ]; then
+        log_error "API 地址不能为空"
+        press_enter
+        return
+    fi
+
+    read -p "$(echo -e "${YELLOW}输入 API Key: ${NC}")" api_key < "$TTY_INPUT"
+    if [ -z "$api_key" ]; then
+        log_error "API Key 不能为空"
+        press_enter
+        return
+    fi
+
+    read -p "$(echo -e "${YELLOW}输入默认模型名称: ${NC}")" model < "$TTY_INPUT"
+    if [ -z "$model" ]; then
+        log_error "模型名称不能为空"
+        press_enter
+        return
+    fi
+
+    read -p "$(echo -e "${YELLOW}输入附加模型(可选，逗号分隔): ${NC}")" extra_models < "$TTY_INPUT"
+
+    echo ""
+    echo -e "${CYAN}选择 API 兼容格式:${NC}"
+    print_menu_item "1" "openai-completions (推荐，兼容最广)" "🟢"
+    print_menu_item "2" "openai-responses" "🔵"
+    print_menu_item "3" "anthropic-messages" "🟣"
+    echo ""
+    read -p "$(echo -e "${YELLOW}请选择 [1-3] (默认: 1): ${NC}")" api_choice < "$TTY_INPUT"
+    case "$api_choice" in
+        2) api_type="openai-responses" ;;
+        3) api_type="anthropic-messages" ;;
+        *) api_type="openai-completions" ;;
+    esac
+
+    save_openclaw_ai_config "custom" "$api_key" "$model" "$base_url" "$api_type" "$provider_name" "$extra_models"
+
+    echo ""
+    log_info "自定义 Provider 配置完成！"
+    log_info "Provider: $provider_name"
+    log_info "模型: $model"
+    [ -n "$extra_models" ] && log_info "附加模型: $extra_models"
+    log_info "API 地址: $base_url"
+    log_info "API 格式: $api_type"
+
+    echo ""
+    if confirm "是否测试 API 连接？" "y"; then
+        test_ai_connection "openai" "$api_key" "$model" "$base_url"
+    fi
+
     press_enter
 }
 
@@ -2689,6 +2824,101 @@ config_google_antigravity() {
 
 # ================================ 渠道配置 ================================
 
+run_channel_diagnostics() {
+    clear_screen
+    print_header
+
+    echo -e "${WHITE}🩺 渠道诊断一键检查${NC}"
+    print_divider
+    echo ""
+
+    if ! check_openclaw_installed; then
+        log_error "OpenClaw 未安装，无法执行渠道诊断"
+        echo ""
+        echo -e "${CYAN}可执行修复命令:${NC}"
+        echo "  npm install -g openclaw@latest"
+        echo "  openclaw onboard --install-daemon"
+        press_enter
+        return
+    fi
+
+    auto_fix_runtime_environment
+    ensure_openclaw_init
+
+    echo -e "${CYAN}1) Gateway 状态检查${NC}"
+    if check_gateway_running; then
+        echo -e "  ${GREEN}✓ Gateway: 运行中${NC}"
+    else
+        echo -e "  ${RED}✗ Gateway: 未运行或不健康${NC}"
+    fi
+
+    echo ""
+    echo -e "${CYAN}2) 插件启用状态${NC}"
+    local plugin_list
+    plugin_list=$(openclaw plugins list 2>/dev/null || true)
+    for ch in telegram discord whatsapp slack wechat imessage feishu; do
+        if echo "$plugin_list" | grep -qi "$ch"; then
+            echo -e "  ${GREEN}✓${NC} $ch"
+        else
+            echo -e "  ${YELLOW}⚠${NC} $ch (未检测到，可能未启用)"
+        fi
+    done
+
+    echo ""
+    echo -e "${CYAN}3) Token/关键配置检查${NC}"
+    local tg_token
+    tg_token=$(openclaw config get channels.telegram.botToken 2>/dev/null || true)
+    if [ -n "$tg_token" ] && [ "$tg_token" != "undefined" ]; then
+        echo -e "  ${GREEN}✓${NC} Telegram botToken 已配置"
+    else
+        echo -e "  ${YELLOW}⚠${NC} Telegram botToken 未配置"
+    fi
+
+    local slack_bot
+    slack_bot=$(openclaw config get channels.slack.botToken 2>/dev/null || true)
+    if [ -n "$slack_bot" ] && [ "$slack_bot" != "undefined" ]; then
+        echo -e "  ${GREEN}✓${NC} Slack botToken 已配置"
+    else
+        echo -e "  ${GRAY}•${NC} Slack botToken 未检测到 (若未使用 Slack 可忽略)"
+    fi
+
+    echo ""
+    echo -e "${CYAN}4) 渠道登录与配对状态${NC}"
+    echo -e "  ${WHITE}已配置渠道:${NC}"
+    openclaw channels list 2>/dev/null | sed 's/^/    /' || echo "    (无渠道或命令不可用)"
+
+    echo ""
+    echo -e "  ${WHITE}Telegram 待审批配对:${NC}"
+    openclaw pairing list telegram 2>/dev/null | sed 's/^/    /' || echo "    (无待审批或命令不可用)"
+
+    echo ""
+    echo -e "  ${WHITE}WhatsApp 待审批配对:${NC}"
+    openclaw pairing list whatsapp 2>/dev/null | sed 's/^/    /' || echo "    (无待审批或命令不可用)"
+
+    echo ""
+    print_divider
+    echo -e "${CYAN}可执行修复命令（可直接复制）:${NC}"
+    echo "  openclaw doctor --fix"
+    echo "  openclaw gateway restart"
+    echo "  openclaw plugins enable telegram"
+    echo "  openclaw plugins enable whatsapp"
+    echo "  openclaw channels login --channel whatsapp --verbose"
+    echo "  openclaw pairing list telegram"
+    echo "  openclaw pairing approve telegram <CODE>"
+    echo "  openclaw pairing list whatsapp"
+    echo "  openclaw pairing approve whatsapp <CODE>"
+    echo "  openclaw logs --follow"
+    echo ""
+
+    if ! check_gateway_running; then
+        echo -e "${YELLOW}检测到 Gateway 未就绪，建议先执行:${NC}"
+        echo "  openclaw gateway --port 18789 --verbose"
+        echo ""
+    fi
+
+    press_enter
+}
+
 config_channels() {
     clear_screen
     print_header
@@ -2704,10 +2934,11 @@ config_channels() {
     print_menu_item "5" "微信 (WeChat)" "🟢"
     print_menu_item "6" "iMessage" "🍎"
     print_menu_item "7" "飞书 (Feishu)" "🔷"
+    print_menu_item "8" "渠道诊断一键检查" "🩺"
     print_menu_item "0" "返回主菜单" "↩️"
     echo ""
     
-    echo -en "${YELLOW}请选择 [0-7]: ${NC}"
+    echo -en "${YELLOW}请选择 [0-8]: ${NC}"
     read choice < "$TTY_INPUT"
     
     case $choice in
@@ -2718,6 +2949,7 @@ config_channels() {
         5) config_wechat ;;
         6) config_imessage ;;
         7) config_feishu ;;
+        8) run_channel_diagnostics ;;
         0) return ;;
         *) log_error "无效选择"; press_enter; config_channels ;;
     esac
@@ -2731,63 +2963,76 @@ config_telegram() {
     print_divider
     echo ""
     
-    echo -e "${CYAN}配置步骤:${NC}"
+    echo -e "${CYAN}配置步骤 (2026 最新):${NC}"
     echo "  1. 在 Telegram 中搜索 @BotFather"
-    echo "  2. 发送 /newbot 创建新机器人"
-    echo "  3. 按提示设置名称，获取 Bot Token"
-    echo "  4. 搜索 @userinfobot 获取你的 User ID"
+    echo "  2. 发送 /newbot 创建新机器人，拿到 Bot Token"
+    echo "  3. 在此处写入 channels.telegram.botToken + dmPolicy"
+    echo "  4. 启动 Gateway 后，首次私聊会收到 Pairing Code"
+    echo "  5. 运行 openclaw pairing approve telegram <CODE> 完成授权"
     echo ""
     print_divider
     echo ""
-    
-    read -p "$(echo -e "${YELLOW}输入 Bot Token: ${NC}")" bot_token
-    read -p "$(echo -e "${YELLOW}输入你的 User ID: ${NC}")" user_id
-    
-    if [ -n "$bot_token" ] && [ -n "$user_id" ]; then
-        
-        # 使用 openclaw 命令配置
+    read -p "$(echo -e "${YELLOW}输入 Bot Token: ${NC}")" bot_token < "$TTY_INPUT"
+    read -p "$(echo -e "${YELLOW}输入你的 Telegram User ID (可选，留空跳过): ${NC}")" user_id < "$TTY_INPUT"
+
+    if [ -n "$bot_token" ]; then
         if check_openclaw_installed; then
+            auto_fix_runtime_environment
+            ensure_openclaw_init
+
             echo ""
-            log_info "正在配置 OpenClaw Telegram 渠道..."
-            
+            log_info "正在配置 Telegram 渠道 (token + pairing policy)..."
+
             # 启用 Telegram 插件
             echo -e "${YELLOW}启用 Telegram 插件...${NC}"
             openclaw plugins enable telegram 2>/dev/null || true
             ensure_plugin_in_allow "telegram"
-            
-            # 添加 Telegram channel
-            echo -e "${YELLOW}添加 Telegram 账号...${NC}"
-            if openclaw channels add --channel telegram --token "$bot_token" 2>/dev/null; then
-                log_info "Telegram 渠道配置成功！"
-            else
-                log_warn "Telegram 渠道可能已存在或配置失败"
+
+            # 新方式: 写入 config
+            openclaw config set channels.telegram.enabled true 2>/dev/null || true
+            openclaw config set channels.telegram.botToken "$bot_token" 2>/dev/null || true
+            openclaw config set channels.telegram.dmPolicy pairing 2>/dev/null || true
+            openclaw config set channels.telegram.groupPolicy allowlist 2>/dev/null || true
+
+            # 如用户提供 user_id，则直接写入 allowFrom（最佳努力）
+            if [ -n "$user_id" ]; then
+                openclaw config set channels.telegram.allowFrom "[\"$user_id\"]" 2>/dev/null || true
             fi
-            
+
+            # 兼容旧版本 CLI 回退
+            if ! openclaw config get channels.telegram.botToken 2>/dev/null | grep -q .; then
+                log_warn "当前版本未识别 channels.telegram.botToken，尝试旧版 channels add..."
+                openclaw channels add --channel telegram --token "$bot_token" 2>/dev/null || true
+            fi
+
             echo ""
             echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
             echo -e "${WHITE}Telegram 配置完成！${NC}"
             echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
             echo ""
             echo -e "Bot Token: ${WHITE}${bot_token:0:10}...${NC}"
-            echo -e "User ID: ${WHITE}$user_id${NC}"
+            [ -n "$user_id" ] && echo -e "User ID: ${WHITE}$user_id${NC}"
             echo ""
-            echo -e "${YELLOW}⚠️  重要: 需要重启 Gateway 才能生效！${NC}"
+            echo -e "${CYAN}后续步骤:${NC}"
+            echo -e "  1. 启动网关: ${WHITE}openclaw gateway --port 18789 --verbose${NC}"
+            echo -e "  2. 给机器人发私聊，获取 Pairing Code"
+            echo -e "  3. 批准配对: ${WHITE}openclaw pairing approve telegram <CODE>${NC}"
+            echo -e "  4. 查看待审批: ${WHITE}openclaw pairing list telegram${NC}"
             echo ""
-            
+
             if confirm "是否现在重启 Gateway？" "y"; then
                 restart_gateway_for_channel
             fi
         else
             log_error "OpenClaw 未安装，请先安装 OpenClaw"
         fi
-        
-        # 询问是否测试
+
         echo ""
-        if confirm "是否发送测试消息验证配置？" "y"; then
+        if confirm "是否验证 Bot Token 并尝试发送测试消息？" "y"; then
             test_telegram_bot "$bot_token" "$user_id"
         fi
     else
-        log_error "配置不完整，已取消"
+        log_error "Bot Token 不能为空，已取消"
     fi
     
     press_enter
@@ -2913,6 +3158,8 @@ config_whatsapp() {
     echo ""
     
     if confirm "是否继续？"; then
+        auto_fix_runtime_environment
+
         # 确保初始化
         ensure_openclaw_init
         
@@ -2926,14 +3173,50 @@ config_whatsapp() {
         log_info "正在启动 WhatsApp 登录向导..."
         echo -e "${YELLOW}请扫描显示的二维码完成登录${NC}"
         echo ""
-        
-        # 使用 channels login 命令
-        openclaw channels login --channel whatsapp --verbose
+
+        # 使用 channels login 命令（记录输出用于故障诊断）
+        local wa_login_log="/tmp/openclaw-whatsapp-login.log"
+        rm -f "$wa_login_log" 2>/dev/null || true
+
+        openclaw channels login --channel whatsapp --verbose 2>&1 | tee "$wa_login_log"
+        local login_exit=${PIPESTATUS[0]}
+
+        # 若失败，尝试通用登录命令回退
+        if [ "$login_exit" -ne 0 ]; then
+            log_warn "专用命令失败，尝试回退命令: openclaw channels login"
+            openclaw channels login 2>&1 | tee -a "$wa_login_log"
+            login_exit=${PIPESTATUS[0]}
+        fi
+
+        # 二维码未显示时给出自动修复方案
+        if ! grep -qiE "qr|scan|barcode|pair" "$wa_login_log"; then
+            echo ""
+            log_warn "未检测到二维码输出，尝试自动修复..."
+            yes | openclaw doctor --fix > /dev/null 2>&1 || true
+
+            echo -e "${CYAN}常见修复方案:${NC}"
+            echo -e "  1. 使用原生终端重试（Windows Terminal/iTerm），避免非交互终端"
+            echo -e "  2. 运行: ${WHITE}export TERM=xterm-256color${NC} 后重试"
+            echo -e "  3. 运行: ${WHITE}openclaw channels logout --channel whatsapp${NC} 后重新登录"
+            echo -e "  4. 检查日志: ${WHITE}$wa_login_log${NC}"
+            echo ""
+
+            if confirm "是否现在执行一次 logout 后重试登录？" "n"; then
+                openclaw channels logout --channel whatsapp 2>/dev/null || true
+                sleep 1
+                openclaw channels login --channel whatsapp --verbose 2>&1 | tee -a "$wa_login_log"
+            fi
+        fi
         
         echo ""
         if confirm "是否重启 Gateway 使配置生效？" "y"; then
             restart_gateway_for_channel
         fi
+
+        echo ""
+        echo -e "${CYAN}配对模式说明:${NC}"
+        echo -e "  首次消息可能会要求配对，使用: ${WHITE}openclaw pairing list whatsapp${NC}"
+        echo -e "  批准配对: ${WHITE}openclaw pairing approve whatsapp <CODE>${NC}"
     fi
     
     press_enter
@@ -4025,13 +4308,17 @@ ensure_openclaw_init() {
 }
 
 # 保存 AI 配置到 OpenClaw 环境变量
-# 参数: provider api_key model base_url [api_type]
+# 参数: provider api_key model base_url [api_type] [custom_provider_name] [extra_models_csv]
 save_openclaw_ai_config() {
     local provider="$1"
     local api_key="$2"
     local model="$3"
     local base_url="$4"
     local api_type="$5"  # 可选参数，用于指定 API 类型
+    local custom_provider_name="$6"  # 可选参数，自定义 provider 名称
+    local extra_models="$7"  # 可选参数，逗号分隔附加模型
+
+    auto_fix_runtime_environment
     
     ensure_openclaw_init
     
@@ -4093,6 +4380,18 @@ EOF
         opencode)
             echo "export OPENCODE_API_KEY=$api_key" >> "$env_file"
             ;;
+        custom)
+            case "$api_type" in
+                anthropic-messages)
+                    echo "export ANTHROPIC_API_KEY=$api_key" >> "$env_file"
+                    echo "export ANTHROPIC_BASE_URL=$base_url" >> "$env_file"
+                    ;;
+                *)
+                    echo "export OPENAI_API_KEY=$api_key" >> "$env_file"
+                    echo "export OPENAI_BASE_URL=$base_url" >> "$env_file"
+                    ;;
+            esac
+            ;;
     esac
     
     chmod 600 "$env_file"
@@ -4102,8 +4401,14 @@ EOF
         local openclaw_model=""
         local use_custom_provider=false
         
+        # 自定义 provider: 使用自定义 BASE_URL + 协议
+        if [ "$provider" = "custom" ]; then
+            use_custom_provider=true
+            local cp_name="${custom_provider_name:-custom-provider}"
+            configure_custom_provider "$cp_name" "$api_key" "$model" "$base_url" "$config_file" "$api_type" "$extra_models"
+            openclaw_model="${cp_name}-custom/$model"
         # 如果使用自定义 BASE_URL，需要配置自定义 provider
-        if [ -n "$base_url" ] && [ "$provider" = "anthropic" ]; then
+        elif [ -n "$base_url" ] && [ "$provider" = "anthropic" ]; then
             use_custom_provider=true
             configure_custom_provider "$provider" "$api_key" "$model" "$base_url" "$config_file"
             openclaw_model="anthropic-custom/$model"
@@ -4187,7 +4492,7 @@ EOF
 }
 
 # 配置自定义 provider（用于支持自定义 API 地址）
-# 参数: provider api_key model base_url config_file [api_type]
+# 参数: provider api_key model base_url config_file [api_type] [extra_models_csv]
 configure_custom_provider() {
     local provider="$1"
     local api_key="$2"
@@ -4195,6 +4500,7 @@ configure_custom_provider() {
     local base_url="$4"
     local config_file="$5"
     local custom_api_type="$6"  # 可选参数，用于覆盖默认 API 类型
+    local custom_extra_models="$7"  # 可选参数，逗号分隔附加模型
     
     # 参数校验
     if [ -z "$model" ]; then
@@ -4288,6 +4594,7 @@ try {
     "api_key": "$api_key",
     "model": "$model",
     "api_type": "$api_type",
+    "extra_models": "$custom_extra_models",
     "do_cleanup": "$do_cleanup"
 }
 EOFVARS
@@ -4324,20 +4631,41 @@ if (vars.do_cleanup === 'true') {
     console.log('Old configurations cleaned up');
 }
 
-// 添加自定义 provider
-config.models.providers[vars.provider_id] = {
-    baseUrl: vars.base_url,
-    apiKey: vars.api_key,
-    models: [
-        {
-            id: vars.model,
-            name: vars.model,
+// 组装模型列表（主模型 + 附加模型）
+const models = [
+    {
+        id: vars.model,
+        name: vars.model,
+        api: vars.api_type,
+        input: ['text','image'],
+        contextWindow: 200000,
+        maxTokens: 8192
+    }
+];
+
+if (vars.extra_models) {
+    const extra = vars.extra_models
+        .split(',')
+        .map(s => s.trim())
+        .filter(Boolean)
+        .filter(m => m !== vars.model);
+    for (const m of extra) {
+        models.push({
+            id: m,
+            name: m,
             api: vars.api_type,
             input: ['text','image'],
             contextWindow: 200000,
             maxTokens: 8192
-        }
-    ]
+        });
+    }
+}
+
+// 添加自定义 provider
+config.models.providers[vars.provider_id] = {
+    baseUrl: vars.base_url,
+    apiKey: vars.api_key,
+    models: models
 };
 
 fs.writeFileSync(vars.config_file, JSON.stringify(config, null, 2));
@@ -4368,6 +4696,7 @@ console.log('Custom provider configured: ' + vars.provider_id);
     "api_key": "$api_key",
     "model": "$model",
     "api_type": "$api_type",
+    "extra_models": "$custom_extra_models",
     "do_cleanup": "$do_cleanup"
 }
 EOFVARS
@@ -4408,19 +4737,33 @@ if vars['do_cleanup'] == 'true':
         config['models']['aliases'].pop('claude-custom', None)
     print('Old configurations cleaned up')
 
+models = [
+    {
+        'id': vars['model'],
+        'name': vars['model'],
+        'api': vars['api_type'],
+        'input': ['text','image'],
+        'contextWindow': 200000,
+        'maxTokens': 8192
+    }
+]
+
+if vars.get('extra_models'):
+    for m in [x.strip() for x in vars['extra_models'].split(',') if x.strip()]:
+        if m != vars['model']:
+            models.append({
+                'id': m,
+                'name': m,
+                'api': vars['api_type'],
+                'input': ['text','image'],
+                'contextWindow': 200000,
+                'maxTokens': 8192
+            })
+
 config['models']['providers'][vars['provider_id']] = {
     'baseUrl': vars['base_url'],
     'apiKey': vars['api_key'],
-    'models': [
-        {
-            'id': vars['model'],
-            'name': vars['model'],
-            'api': vars['api_type'],
-            'input': ['text','image'],
-            'contextWindow': 200000,
-            'maxTokens': 8192
-        }
-    ]
+    'models': models
 }
 
 with open(config_file, 'w') as f:

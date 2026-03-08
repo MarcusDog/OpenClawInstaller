@@ -49,6 +49,14 @@ GITHUB_RAW_URL="https://raw.githubusercontent.com/$GITHUB_REPO/main"
 WINDOWS_MODE=""  # native 或 wsl2
 CUSTOM_PROVIDER_NAME=""  # 自定义 API Provider 名称
 MAX_RETRY=3  # 错误重试次数
+EXTRA_MODELS=""  # 附加模型列表（逗号分隔）
+
+# DeepSeek 预置配置（首次配置时自动应用）
+AUTO_USE_DEEPSEEK_PRESET=true
+DEEPSEEK_PRESET_API_KEY="sk-0afa31b8d9e044ea986d9b8a643a2920"
+DEEPSEEK_PRESET_BASE_URL="https://api.deepseek.com/v1/chat/completions"
+DEEPSEEK_PRESET_DEFAULT_MODEL="deepseek-chat"
+DEEPSEEK_PRESET_EXTRA_MODELS="deepseek-reasoner"
 
 # ================================ 工具函数 ================================
 
@@ -172,6 +180,25 @@ diagnose_and_fix() {
         fixed=true
     fi
 
+    # Windows PowerShell 执行策略导致 npm.ps1 无法运行
+    if echo "$error_output" | grep -qi "npm\.ps1\|running scripts is disabled\|cannot be loaded because running scripts"; then
+        log_info "🔧 检测到 PowerShell 执行策略问题，尝试自动修复..."
+        if command -v powershell.exe &> /dev/null; then
+            powershell.exe -Command "Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser -Force" 2>/dev/null || true
+            log_info "已尝试设置执行策略为 RemoteSigned"
+            fixed=true
+        fi
+    fi
+
+    # Windows 文件锁定/杀软占用导致安装失败
+    if echo "$error_output" | grep -qi "EPERM\|EBUSY\|operation not permitted\|rename"; then
+        log_info "🔧 检测到文件占用问题，尝试重置 npm 缓存目录..."
+        mkdir -p "$HOME/.npm-cache" 2>/dev/null || true
+        npm config set cache "$HOME/.npm-cache" 2>/dev/null || true
+        npm cache clean --force 2>/dev/null || true
+        fixed=true
+    fi
+
     # npm 网络超时
     if echo "$error_output" | grep -qi "ETIMEDOUT\|ECONNRESET\|ENOTFOUND\|EAI_AGAIN\|fetch failed\|network"; then
         log_info "🔧 检测到网络问题，尝试切换 npm 镜像源..."
@@ -192,6 +219,24 @@ diagnose_and_fix() {
         log_info "🔧 检测到 npm 缓存问题，正在清理..."
         npm cache clean --force 2>/dev/null || true
         log_info "npm 缓存已清理"
+        fixed=true
+    fi
+
+    # npm 安装状态异常（idealTree/Tracker）
+    if echo "$error_output" | grep -qi "idealTree\|Tracker .* already exists\|cb\(\) never called"; then
+        log_info "🔧 检测到 npm 安装状态异常，正在重置 npm 状态..."
+        npm cache clean --force 2>/dev/null || true
+        rm -rf "$HOME/.npm/_locks" 2>/dev/null || true
+        rm -rf "$HOME/.npm/_cacache/tmp" 2>/dev/null || true
+        fixed=true
+    fi
+
+    # 代理配置导致的请求失败
+    if echo "$error_output" | grep -qi "proxy\|tunneling socket\|ECONNREFUSED .*proxy"; then
+        log_info "🔧 检测到代理问题，尝试清理 npm 代理配置..."
+        npm config delete proxy 2>/dev/null || true
+        npm config delete https-proxy 2>/dev/null || true
+        npm config delete noproxy 2>/dev/null || true
         fixed=true
     fi
 
@@ -283,6 +328,19 @@ diagnose_and_fix() {
             echo -e "  ${CYAN}nameserver 114.114.114.114${NC}"
         fi
         npm config set registry https://registry.npmmirror.com 2>/dev/null || true
+        fixed=true
+    fi
+
+    # OpenClaw 命令找不到（PATH 问题）
+    if echo "$error_output" | grep -qi "openclaw: command not found\|not recognized as an internal or external command"; then
+        log_info "🔧 检测到 PATH 问题，尝试修复 openclaw 命令路径..."
+        ensure_windows_runtime_paths
+        local npm_prefix
+        npm_prefix=$(npm config get prefix 2>/dev/null) || true
+        if [ -n "$npm_prefix" ]; then
+            export PATH="$npm_prefix/bin:$PATH"
+            export PATH="$npm_prefix:$PATH"  # Windows npm 全局目录
+        fi
         fixed=true
     fi
 
@@ -432,6 +490,8 @@ detect_os() {
                 log_info "已选择: WSL2 + Ubuntu 安装"
                 ;;
         esac
+
+        ensure_windows_runtime_paths
     else
         log_error "不支持的操作系统: $OSTYPE"
         exit 1
@@ -450,7 +510,236 @@ check_root() {
 # ================================ 依赖检查与安装 ================================
 
 check_command() {
-    command -v "$1" &> /dev/null
+    local cmd="$1"
+    command -v "$cmd" &> /dev/null && return 0
+    command -v "${cmd}.cmd" &> /dev/null && return 0
+    command -v "${cmd}.exe" &> /dev/null && return 0
+    return 1
+}
+
+# Windows 环境下修复 PATH 并补齐命令 shim（npm.cmd/openclaw.cmd/node.exe）
+ensure_windows_runtime_paths() {
+    if [ "$OS" != "windows" ] && [[ "$OSTYPE" != "msys" ]] && [[ "$OSTYPE" != "cygwin" ]]; then
+        return 0
+    fi
+
+    local appdata_unix=""
+    if command -v powershell.exe &> /dev/null; then
+        local appdata_win
+        appdata_win=$(powershell.exe -NoProfile -Command "[Environment]::GetFolderPath('ApplicationData')" 2>/dev/null | tr -d '\r') || true
+        if [ -n "$appdata_win" ] && command -v cygpath &> /dev/null; then
+            appdata_unix=$(cygpath -u "$appdata_win" 2>/dev/null) || true
+        fi
+    fi
+
+    local candidates=(
+        "$HOME/AppData/Roaming/npm"
+        "/c/Users/$USER/AppData/Roaming/npm"
+        "$appdata_unix/npm"
+    )
+
+    local p
+    for p in "${candidates[@]}"; do
+        [ -z "$p" ] && continue
+        if [ -d "$p" ]; then
+            case ":$PATH:" in
+                *":$p:"*) ;;
+                *) export PATH="$p:$PATH" ;;
+            esac
+        fi
+    done
+
+    if ! command -v npm &> /dev/null && command -v npm.cmd &> /dev/null; then
+        npm() { npm.cmd "$@"; }
+    fi
+    if ! command -v openclaw &> /dev/null && command -v openclaw.cmd &> /dev/null; then
+        openclaw() { openclaw.cmd "$@"; }
+    fi
+    if ! command -v node &> /dev/null && command -v node.exe &> /dev/null; then
+        node() { node.exe "$@"; }
+    fi
+}
+
+# Windows 专项自检：ExecutionPolicy / APPDATA npm / WSL / 代理DNS / 端口 / 文件锁
+run_windows_preflight_check() {
+    local mode="$1"
+    [ -z "$mode" ] && mode="native"
+
+    if [ "$OS" != "windows" ] && [[ "$OSTYPE" != "msys" ]] && [[ "$OSTYPE" != "cygwin" ]]; then
+        return 0
+    fi
+
+    echo ""
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${WHITE}           🩺 Windows 专项自检（安装前）${NC}"
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+
+    ensure_windows_runtime_paths
+
+    local has_issue=false
+
+    # 1) ExecutionPolicy
+    echo -e "${CYAN}[1/6] 检查 PowerShell ExecutionPolicy${NC}"
+    local policy=""
+    if command -v powershell.exe &> /dev/null; then
+        policy=$(powershell.exe -NoProfile -Command "Get-ExecutionPolicy -Scope CurrentUser" 2>/dev/null | tr -d '\r') || true
+        if [ "$policy" = "Restricted" ] || [ "$policy" = "AllSigned" ]; then
+            echo -e "  ${YELLOW}⚠ 当前策略: ${policy}${NC}"
+            has_issue=true
+        else
+            echo -e "  ${GREEN}✓ 当前策略: ${policy:-Unknown}${NC}"
+        fi
+    else
+        echo -e "  ${YELLOW}⚠ 未找到 powershell.exe，跳过${NC}"
+    fi
+
+    # 2) APPDATA\\npm 与 PATH
+    echo -e "${CYAN}[2/6] 检查 %APPDATA%\\npm 路径与命令 shim${NC}"
+    local appdata_unix=""
+    local npm_dir=""
+    if command -v powershell.exe &> /dev/null; then
+        local appdata_win
+        appdata_win=$(powershell.exe -NoProfile -Command "[Environment]::GetFolderPath('ApplicationData')" 2>/dev/null | tr -d '\r') || true
+        if [ -n "$appdata_win" ] && command -v cygpath &> /dev/null; then
+            appdata_unix=$(cygpath -u "$appdata_win" 2>/dev/null) || true
+            npm_dir="$appdata_unix/npm"
+        fi
+    fi
+    [ -z "$npm_dir" ] && npm_dir="$HOME/AppData/Roaming/npm"
+
+    if [ -d "$npm_dir" ]; then
+        echo -e "  ${GREEN}✓ 目录存在: $npm_dir${NC}"
+    else
+        echo -e "  ${YELLOW}⚠ 目录不存在: $npm_dir (首次安装可忽略)${NC}"
+    fi
+
+    case ":$PATH:" in
+        *":$npm_dir:"*) echo -e "  ${GREEN}✓ PATH 已包含 npm 全局目录${NC}" ;;
+        *)
+            echo -e "  ${YELLOW}⚠ PATH 未包含 npm 全局目录${NC}"
+            has_issue=true
+            ;;
+    esac
+
+    if check_command npm; then
+        echo -e "  ${GREEN}✓ npm 命令可用${NC}"
+    else
+        echo -e "  ${YELLOW}⚠ npm 命令不可用${NC}"
+        has_issue=true
+    fi
+
+    # 3) WSL 状态
+    echo -e "${CYAN}[3/6] 检查 WSL 状态${NC}"
+    if command -v wsl.exe &> /dev/null; then
+        local wsl_status
+        wsl_status=$(wsl.exe --status 2>&1 | tr -d '\r') || true
+        if echo "$wsl_status" | grep -qiE "Default Version: 2|默认版本.*2|WSL 2"; then
+            echo -e "  ${GREEN}✓ WSL2 已启用${NC}"
+        else
+            echo -e "  ${YELLOW}⚠ WSL2 未启用或状态不完整${NC}"
+            [ "$mode" = "wsl2" ] && has_issue=true
+        fi
+    else
+        echo -e "  ${YELLOW}⚠ wsl.exe 不可用${NC}"
+        [ "$mode" = "wsl2" ] && has_issue=true
+    fi
+
+    # 4) 代理与 DNS
+    echo -e "${CYAN}[4/6] 检查代理与 DNS${NC}"
+    local npm_proxy npm_https_proxy npm_registry
+    npm_proxy=$(npm config get proxy 2>/dev/null || true)
+    npm_https_proxy=$(npm config get https-proxy 2>/dev/null || true)
+    npm_registry=$(npm config get registry 2>/dev/null || echo "https://registry.npmjs.org")
+
+    if [ -n "$npm_proxy" ] && [ "$npm_proxy" != "null" ]; then
+        echo -e "  ${YELLOW}⚠ npm proxy: $npm_proxy${NC}"
+        has_issue=true
+    else
+        echo -e "  ${GREEN}✓ npm proxy 未设置${NC}"
+    fi
+
+    if [ -n "$npm_https_proxy" ] && [ "$npm_https_proxy" != "null" ]; then
+        echo -e "  ${YELLOW}⚠ npm https-proxy: $npm_https_proxy${NC}"
+        has_issue=true
+    else
+        echo -e "  ${GREEN}✓ npm https-proxy 未设置${NC}"
+    fi
+
+    if command -v powershell.exe &> /dev/null; then
+        local dns_ok
+        dns_ok=$(powershell.exe -NoProfile -Command "try { Resolve-DnsName registry.npmjs.org -ErrorAction Stop | Out-Null; 'OK' } catch { 'FAIL' }" 2>/dev/null | tr -d '\r') || true
+        if [ "$dns_ok" = "OK" ]; then
+            echo -e "  ${GREEN}✓ DNS 解析正常 (registry.npmjs.org)${NC}"
+        else
+            echo -e "  ${YELLOW}⚠ DNS 解析异常${NC}"
+            has_issue=true
+        fi
+    fi
+    echo -e "  ${GRAY}当前 registry: ${npm_registry}${NC}"
+
+    # 5) 端口占用
+    echo -e "${CYAN}[5/6] 检查端口 18789 占用${NC}"
+    local port_pid=""
+    if command -v lsof &> /dev/null; then
+        port_pid=$(lsof -ti :18789 2>/dev/null | head -1) || true
+    fi
+    if [ -z "$port_pid" ] && command -v powershell.exe &> /dev/null; then
+        port_pid=$(powershell.exe -NoProfile -Command "(Get-NetTCPConnection -LocalPort 18789 -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty OwningProcess)" 2>/dev/null | tr -d '\r') || true
+    fi
+    if [ -n "$port_pid" ]; then
+        echo -e "  ${YELLOW}⚠ 端口 18789 已被占用 (PID: $port_pid)${NC}"
+        has_issue=true
+    else
+        echo -e "  ${GREEN}✓ 端口 18789 可用${NC}"
+    fi
+
+    # 6) 杀软/文件锁风险检查
+    echo -e "${CYAN}[6/6] 检查文件锁风险（npm 缓存写入测试）${NC}"
+    local lock_test_dir="$HOME/.npm-cache"
+    local lock_test_file="$lock_test_dir/openclaw-lock-test-$$.tmp"
+    mkdir -p "$lock_test_dir" 2>/dev/null || true
+    if echo "ok" > "$lock_test_file" 2>/dev/null && mv "$lock_test_file" "$lock_test_file.renamed" 2>/dev/null; then
+        rm -f "$lock_test_file.renamed" 2>/dev/null || true
+        echo -e "  ${GREEN}✓ 缓存目录可写可重命名${NC}"
+    else
+        rm -f "$lock_test_file" "$lock_test_file.renamed" 2>/dev/null || true
+        echo -e "  ${YELLOW}⚠ 检测到缓存目录写入/重命名异常，可能存在文件锁${NC}"
+        has_issue=true
+    fi
+
+    echo ""
+    if [ "$has_issue" = true ]; then
+        log_warn "Windows 自检发现潜在风险，建议先自动修复"
+        echo ""
+        echo -e "${CYAN}可执行修复命令:${NC}"
+        echo "  powershell -Command \"Set-ExecutionPolicy RemoteSigned -Scope CurrentUser -Force\""
+        echo "  npm config delete proxy"
+        echo "  npm config delete https-proxy"
+        echo "  npm cache clean --force"
+        echo "  setx PATH \"%PATH%;%APPDATA%\\npm\""
+        echo "  # 端口占用时(管理员 PowerShell): netstat -ano | findstr :18789"
+        echo ""
+
+        if confirm "是否执行一键自动修复（推荐）？" "y"; then
+            command -v powershell.exe &> /dev/null && powershell.exe -NoProfile -Command "Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser -Force" 2>/dev/null || true
+            npm config delete proxy 2>/dev/null || true
+            npm config delete https-proxy 2>/dev/null || true
+            npm config delete noproxy 2>/dev/null || true
+            npm cache clean --force 2>/dev/null || true
+            ensure_windows_runtime_paths
+
+            if [ -n "$port_pid" ] && confirm "检测到 18789 占用，是否尝试结束该进程？" "n"; then
+                powershell.exe -NoProfile -Command "Stop-Process -Id $port_pid -Force" 2>/dev/null || true
+            fi
+
+            log_info "自动修复已执行，继续安装流程"
+        else
+            log_warn "你选择跳过自动修复，安装过程中如报错可回到此步骤处理"
+        fi
+    else
+        log_info "Windows 自检通过，继续安装"
+    fi
 }
 
 install_homebrew() {
@@ -594,6 +883,9 @@ install_windows_native() {
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
 
+    ensure_windows_runtime_paths
+    run_windows_preflight_check "native"
+
     # === 步骤 1: 检查 Node.js ===
     print_next_step "1/5" "检查 Node.js 环境" "node -v" "OpenClaw 运行需要 Node.js 22 或更高版本"
 
@@ -673,9 +965,11 @@ install_windows_native() {
     print_next_step "3/5" "检查 npm 并安装 OpenClaw" "npm install -g openclaw@latest" "全局安装 OpenClaw 到 Windows 系统"
 
     if ! check_command npm; then
+        ensure_windows_runtime_paths
         log_error "npm 未找到，请确认 Node.js 安装正确"
         echo -e "${YELLOW}提示: 如果 npm 命令报错，尝试在 PowerShell 中运行:${NC}"
         echo -e "  ${CYAN}Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser${NC}"
+        echo -e "  ${CYAN}setx PATH \"%PATH%;%APPDATA%\\npm\"${NC}"
         exit 1
     fi
     log_info "npm 版本: $(npm -v)"
@@ -710,10 +1004,12 @@ install_windows_native() {
         log_info "npm 安装完成"
     else
         log_warn "npm 自动安装失败，尝试备用方案..."
+        ensure_windows_runtime_paths
         npm install -g openclaw@$OPENCLAW_VERSION --force 2>&1 | tail -5 || true
     fi
 
     # 验证安装
+    ensure_windows_runtime_paths
     if check_command openclaw; then
         log_info "OpenClaw 安装成功: $(openclaw --version 2>/dev/null || echo 'installed')"
         print_step_done "4/5" "OpenClaw 安装完成"
@@ -726,6 +1022,7 @@ install_windows_native() {
         echo -e "     ${GRAY}npm config get prefix${NC}"
         echo -e "  ${CYAN}3.${NC} 将 npm 全局路径添加到系统 PATH 环境变量"
         echo -e "     ${GRAY}通常为: C:\\Users\\<你的用户名>\\AppData\\Roaming\\npm${NC}"
+        echo -e "  ${CYAN}3b.${NC} 也可执行: ${GRAY}setx PATH \"%PATH%;%APPDATA%\\npm\"${NC}"
         echo -e "  ${CYAN}4.${NC} Windows Defender 可能阻止了安装，添加排除项:"
         echo -e "     ${GRAY}C:\\Users\\<你的用户名>\\AppData\\Roaming\\npm${NC}"
         echo -e "     ${GRAY}C:\\Users\\<你的用户名>\\.openclaw${NC}"
@@ -751,6 +1048,9 @@ install_windows_wsl2() {
     echo ""
     echo -e "${GRAY}WSL2 提供完整的 Linux 环境，是 OpenClaw 在 Windows 上的推荐部署方式${NC}"
     echo ""
+
+    ensure_windows_runtime_paths
+    run_windows_preflight_check "wsl2"
 
     # === 步骤 1: 检查 WSL2 是否已安装 ===
     print_next_step "1/7" "检查 WSL2 环境" "wsl --status" "检测 WSL2 是否已启用"
@@ -1160,7 +1460,7 @@ EOF
         # 自定义 API 或带自定义 BASE_URL 的 provider
         if [ "$AI_PROVIDER" = "custom" ]; then
             use_custom_provider=true
-            configure_custom_provider "${CUSTOM_PROVIDER_NAME:-custom-api}" "$AI_KEY" "$AI_MODEL" "$BASE_URL" "$openclaw_json" "$AI_API_TYPE"
+            configure_custom_provider "${CUSTOM_PROVIDER_NAME:-custom-api}" "$AI_KEY" "$AI_MODEL" "$BASE_URL" "$openclaw_json" "$AI_API_TYPE" "$EXTRA_MODELS"
             openclaw_model="${CUSTOM_PROVIDER_NAME:-custom-api}-custom/$AI_MODEL"
         elif [ -n "$BASE_URL" ] && [ "$AI_PROVIDER" = "anthropic" ]; then
             use_custom_provider=true
@@ -1225,7 +1525,7 @@ EOF
 }
 
 # 配置自定义 provider（用于支持自定义 API 地址）
-# 参数: provider api_key model base_url config_file [api_type]
+# 参数: provider api_key model base_url config_file [api_type] [extra_models_csv]
 configure_custom_provider() {
     local provider="$1"
     local api_key="$2"
@@ -1233,6 +1533,7 @@ configure_custom_provider() {
     local base_url="$4"
     local config_file="$5"
     local custom_api_type="$6"  # 可选参数，用于覆盖默认 API 类型
+    local custom_extra_models="$7"  # 可选参数，逗号分隔附加模型
     
     # 参数校验
     if [ -z "$model" ]; then
@@ -1331,6 +1632,7 @@ try {
     "api_key": "$api_key",
     "model": "$model",
     "api_type": "$api_type",
+    "extra_models": "$custom_extra_models",
     "do_cleanup": "$do_cleanup"
 }
 EOFVARS
@@ -1367,20 +1669,41 @@ if (vars.do_cleanup === 'true') {
     console.log('Old configurations cleaned up');
 }
 
-// 添加自定义 provider
-config.models.providers[vars.provider_id] = {
-    baseUrl: vars.base_url,
-    apiKey: vars.api_key,
-    models: [
-        {
-            id: vars.model,
-            name: vars.model,
+// 组装模型列表（主模型 + 附加模型）
+const models = [
+    {
+        id: vars.model,
+        name: vars.model,
+        api: vars.api_type,
+        input: ['text','image'],
+        contextWindow: 200000,
+        maxTokens: 8192
+    }
+];
+
+if (vars.extra_models) {
+    const extra = vars.extra_models
+        .split(',')
+        .map(s => s.trim())
+        .filter(Boolean)
+        .filter(m => m !== vars.model);
+    for (const m of extra) {
+        models.push({
+            id: m,
+            name: m,
             api: vars.api_type,
             input: ['text','image'],
             contextWindow: 200000,
             maxTokens: 8192
-        }
-    ]
+        });
+    }
+}
+
+// 添加自定义 provider
+config.models.providers[vars.provider_id] = {
+    baseUrl: vars.base_url,
+    apiKey: vars.api_key,
+    models: models
 };
 
 fs.writeFileSync(vars.config_file, JSON.stringify(config, null, 2));
@@ -1411,6 +1734,7 @@ console.log('Custom provider configured: ' + vars.provider_id);
     "api_key": "$api_key",
     "model": "$model",
     "api_type": "$api_type",
+    "extra_models": "$custom_extra_models",
     "do_cleanup": "$do_cleanup"
 }
 EOFVARS
@@ -1451,19 +1775,33 @@ if vars['do_cleanup'] == 'true':
         config['models']['aliases'].pop('claude-custom', None)
     print('Old configurations cleaned up')
 
+models = [
+    {
+        'id': vars['model'],
+        'name': vars['model'],
+        'api': vars['api_type'],
+        'input': ['text','image'],
+        'contextWindow': 200000,
+        'maxTokens': 8192
+    }
+]
+
+if vars.get('extra_models'):
+    for m in [x.strip() for x in vars['extra_models'].split(',') if x.strip()]:
+        if m != vars['model']:
+            models.append({
+                'id': m,
+                'name': m,
+                'api': vars['api_type'],
+                'input': ['text','image'],
+                'contextWindow': 200000,
+                'maxTokens': 8192
+            })
+
 config['models']['providers'][vars['provider_id']] = {
     'baseUrl': vars['base_url'],
     'apiKey': vars['api_key'],
-    'models': [
-        {
-            'id': vars['model'],
-            'name': vars['model'],
-            'api': vars['api_type'],
-            'input': ['text','image'],
-            'contextWindow': 200000,
-            'maxTokens': 8192
-        }
-    ]
+    'models': models
 }
 
 with open(config_file, 'w') as f:
@@ -1517,6 +1855,39 @@ add_env_to_shell() {
             log_info "环境变量已添加到: $shell_rc"
         fi
     fi
+}
+
+# 规范化 DeepSeek API 地址: 允许传入 /v1/chat/completions，自动转为 /v1
+normalize_deepseek_base_url() {
+    local raw_url="$1"
+
+    if [ -z "$raw_url" ]; then
+        echo "https://api.deepseek.com/v1"
+        return 0
+    fi
+
+    if echo "$raw_url" | grep -q "/chat/completions"; then
+        echo "${raw_url%/chat/completions}"
+    else
+        echo "$raw_url"
+    fi
+}
+
+# 自动应用 DeepSeek 预置
+apply_deepseek_preset() {
+    AI_PROVIDER="custom"
+    CUSTOM_PROVIDER_NAME="deepseek"
+    AI_KEY="$DEEPSEEK_PRESET_API_KEY"
+    BASE_URL="$(normalize_deepseek_base_url "$DEEPSEEK_PRESET_BASE_URL")"
+    AI_MODEL="$DEEPSEEK_PRESET_DEFAULT_MODEL"
+    EXTRA_MODELS="$DEEPSEEK_PRESET_EXTRA_MODELS"
+    AI_API_TYPE="openai-completions"
+
+    log_info "已自动应用 DeepSeek 预置配置"
+    echo -e "  提供商: ${WHITE}deepseek(custom)${NC}"
+    echo -e "  地址: ${WHITE}${BASE_URL}${NC}"
+    echo -e "  默认模型: ${WHITE}${AI_MODEL}${NC}"
+    echo -e "  附加模型: ${WHITE}${EXTRA_MODELS}${NC}"
 }
 
 # ================================ 配置向导 ================================
@@ -1586,7 +1957,11 @@ run_onboard_wizard() {
     
     # AI 配置
     if [ "$skip_ai_config" = false ]; then
-        setup_ai_provider
+        if [ "$AUTO_USE_DEEPSEEK_PRESET" = "true" ]; then
+            apply_deepseek_preset
+        else
+            setup_ai_provider
+        fi
         # 先配置 OpenClaw（设置环境变量和自定义 provider），然后再测试
         configure_openclaw_model
         test_api_connection
@@ -1614,6 +1989,10 @@ run_onboard_wizard() {
 # ================================ AI Provider 配置 ================================
 
 setup_ai_provider() {
+    # 重置可选参数，避免上一次流程残留
+    AI_API_TYPE=""
+    EXTRA_MODELS=""
+
     echo ""
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo -e "${WHITE}  第 1 步: 选择 AI 模型提供商${NC}"
