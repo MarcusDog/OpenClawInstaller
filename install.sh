@@ -3,15 +3,15 @@
 # ╔═══════════════════════════════════════════════════════════════════════════╗
 # ║                                                                           ║
 # ║   🦞 OpenClaw 一键部署脚本 v2.0.1                                          ║
-# ║   智能 AI 助手部署工具 - 支持多平台多模型                                    ║
+# ║   OpenClaw Auto Deploy - 跨平台智能安装与自动修复                           ║
 # ║                                                                           ║
-# ║   GitHub: https://github.com/MarcusDog/OpenClawInstaller                  ║
+# ║   GitHub: https://github.com/MarcusDog/openclaw-auto-deploy               ║
 # ║   官方文档: https://docs.openclaw.ai                                       ║
 # ║                                                                           ║
 # ╚═══════════════════════════════════════════════════════════════════════════╝
 #
 # 使用方法:
-#   curl -fsSL https://raw.githubusercontent.com/MarcusDog/OpenClawInstaller/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/MarcusDog/openclaw-auto-deploy/main/install.sh | bash
 #   或本地执行: chmod +x install.sh && ./install.sh
 #
 
@@ -44,8 +44,9 @@ NC='\033[0m' # 无颜色
 OPENCLAW_VERSION="latest"
 CONFIG_DIR="$HOME/.openclaw"
 MIN_NODE_VERSION=22
-GITHUB_REPO="MarcusDog/OpenClawInstaller"
+GITHUB_REPO="MarcusDog/openclaw-auto-deploy"
 GITHUB_RAW_URL="https://raw.githubusercontent.com/$GITHUB_REPO/main"
+GITHUB_URL="https://github.com/$GITHUB_REPO"
 WINDOWS_MODE=""  # native 或 wsl2
 CUSTOM_PROVIDER_NAME=""  # 自定义 API Provider 名称
 MAX_RETRY=3  # 错误重试次数
@@ -63,18 +64,27 @@ DEEPSEEK_PRESET_EXTRA_MODELS="deepseek-reasoner"
 print_banner() {
     echo -e "${CYAN}"
     cat << 'EOF'
-    
-     ██████╗ ██████╗ ███████╗███╗   ██╗ ██████╗██╗      █████╗ ██╗    ██╗
-    ██╔═══██╗██╔══██╗██╔════╝████╗  ██║██╔════╝██║     ██╔══██╗██║    ██║
-    ██║   ██║██████╔╝█████╗  ██╔██╗ ██║██║     ██║     ███████║██║ █╗ ██║
-    ██║   ██║██╔═══╝ ██╔══╝  ██║╚██╗██║██║     ██║     ██╔══██║██║███╗██║
-    ╚██████╔╝██║     ███████╗██║ ╚████║╚██████╗███████╗██║  ██║╚███╔███╔╝
-     ╚═════╝ ╚═╝     ╚══════╝╚═╝  ╚═══╝ ╚═════╝╚══════╝╚═╝  ╚═╝ ╚══╝╚══╝   
-                                                                         
-              🦞 智能 AI 助手一键部署工具 v2.0.1 🦞
-    
+
+    ╭──────────────────────────────────────────────────────────────────────╮
+    │                                                                      │
+    │   ██████╗ ██████╗ ███████╗███╗   ██╗ ██████╗██╗      █████╗ ██╗    │
+    │  ██╔═══██╗██╔══██╗██╔════╝████╗  ██║██╔════╝██║     ██╔══██╗██║    │
+    │  ██║   ██║██████╔╝█████╗  ██╔██╗ ██║██║     ██║     ███████║██║    │
+    │  ██║   ██║██╔═══╝ ██╔══╝  ██║╚██╗██║██║     ██║     ██╔══██║██║    │
+    │  ╚██████╔╝██║     ███████╗██║ ╚████║╚██████╗███████╗██║  ██║╚███╗  │
+    │   ╚═════╝ ╚═╝     ╚══════╝╚═╝  ╚═══╝ ╚═════╝╚══════╝╚═╝  ╚═╝ ╚══╝  │
+    │                                                                      │
+    │   OpenClaw Auto Deploy                                               │
+    │   Windows / WSL2 / Linux / macOS 一键安装、自动修复、快速起飞        │
+    │                                                                      │
+    ╰──────────────────────────────────────────────────────────────────────╯
+
 EOF
     echo -e "${NC}"
+    echo -e "${WHITE}  🚀 当前模式:${NC} 智能安装向导"
+    echo -e "${WHITE}  🔗 仓库地址:${NC} ${PURPLE}${GITHUB_URL}${NC}"
+    echo -e "${WHITE}  🛠️  能力亮点:${NC} 自动修复 · 多平台兼容 · 配置菜单"
+    echo ""
 }
 
 log_info() {
@@ -142,15 +152,15 @@ print_next_step() {
     local command="$3"
     local purpose="$4"
     echo ""
-    echo -e "${PURPLE}┌─────────────────────────────────────────────────────────────┐${NC}"
-    echo -e "${PURPLE}│${NC} ${WHITE}📋 下一步 (${step_num}): ${description}${NC}"
+    echo -e "${PURPLE}╭─────────────────────────────────────────────────────────────╮${NC}"
+    echo -e "${PURPLE}│${NC} ${WHITE}📋 下一步 ${step_num}${NC}  ${CYAN}${description}${NC}"
     if [ -n "$command" ]; then
         echo -e "${PURPLE}│${NC} ${GRAY}命令:${NC} ${CYAN}${command}${NC}"
     fi
     if [ -n "$purpose" ]; then
-        echo -e "${PURPLE}│${NC} ${GRAY}目的:${NC} ${purpose}"
+        echo -e "${PURPLE}│${NC} ${GRAY}说明:${NC} ${purpose}"
     fi
-    echo -e "${PURPLE}└─────────────────────────────────────────────────────────────┘${NC}"
+    echo -e "${PURPLE}╰─────────────────────────────────────────────────────────────╯${NC}"
     echo ""
 }
 
@@ -158,7 +168,7 @@ print_next_step() {
 print_step_done() {
     local step_num="$1"
     local description="$2"
-    echo -e "${GREEN}  ✓ 步骤 ${step_num} 完成: ${description}${NC}"
+    echo -e "${GREEN}  ✓ Step ${step_num} 已完成${NC} ${GRAY}·${NC} ${description}"
 }
 
 # ================================ 错误诊断与自动修复 ================================
@@ -1173,7 +1183,7 @@ install_windows_wsl2() {
             echo -e "  ${CYAN}openclaw onboard --install-daemon${NC}"
             echo ""
             echo -e "${YELLOW}或者直接运行一键安装脚本:${NC}"
-            echo -e "  ${CYAN}curl -fsSL https://raw.githubusercontent.com/${GITHUB_REPO}/main/install.sh | bash${NC}"
+            echo -e "  ${CYAN}curl -fsSL ${GITHUB_RAW_URL}/install.sh | bash${NC}"
             echo ""
 
             if confirm "是否现在重启计算机？" "n"; then
@@ -2937,27 +2947,27 @@ main() {
     
     # 推荐仓库入口
     echo ""
-    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${WHITE}           📦 推荐：OpenClawInstaller 维护仓库${NC}"
-    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${CYAN}╔═════════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${WHITE}║  📦 推荐仓库：OpenClaw Auto Deploy                        ║${NC}"
+    echo -e "${CYAN}╚═════════════════════════════════════════════════════════════╝${NC}"
     echo ""
-    echo -e "${WHITE}获取最新脚本、文档和问题反馈入口：${NC}"
+    echo -e "${WHITE}获取最新脚本、更新说明与问题反馈入口：${NC}"
     echo ""
-    echo -e "  🔧 ${CYAN}安装脚本${NC} - 一键安装与自动修复"
-    echo -e "  🧭 ${CYAN}配置菜单${NC} - AI 模型与渠道管理"
-    echo -e "  💻 ${CYAN}跨平台${NC} - 支持 macOS、Windows、Linux"
-    echo -e "  🐞 ${CYAN}问题反馈${NC} - GitHub Issues / Discussions"
+    echo -e "  🔧 ${CYAN}安装脚本${NC} - 一键安装、自动修复、引导配置"
+    echo -e "  🧭 ${CYAN}控制中心${NC} - AI 模型、渠道、服务统一管理"
+    echo -e "  💻 ${CYAN}跨平台兼容${NC} - Windows / WSL2 / Linux / macOS"
+    echo -e "  🐞 ${CYAN}反馈入口${NC} - Issues / Discussions / 使用建议"
     echo ""
-    echo -e "  👉 ${PURPLE}下载地址: https://github.com/MarcusDog/OpenClawInstaller${NC}"
+    echo -e "  👉 ${PURPLE}下载地址: ${GITHUB_URL}${NC}"
     echo ""
     
     # 询问是否打开配置菜单进行详细配置
     echo ""
-    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${WHITE}           📝 配置菜单（命令行版）${NC}"
-    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${CYAN}╔═════════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${WHITE}║  📝 OpenClaw Control Center                               ║${NC}"
+    echo -e "${CYAN}╚═════════════════════════════════════════════════════════════╝${NC}"
     echo ""
-    echo -e "${GRAY}配置菜单支持: 渠道配置、身份设置、安全配置、服务管理等${NC}"
+    echo -e "${GRAY}支持渠道配置、身份设置、安全策略、服务管理与快速体检${NC}"
     echo ""
     echo -e "${WHITE}💡 下次可以直接运行配置菜单:${NC}"
     echo -e "   ${CYAN}bash ./config-menu.sh${NC}"

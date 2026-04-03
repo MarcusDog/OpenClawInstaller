@@ -1,582 +1,263 @@
-# 🦞 OpenClaw 一键部署工具
+# 🦞 OpenClaw Auto Deploy
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Version-2.0.1-blue.svg" alt="Version">
-  <img src="https://img.shields.io/badge/Platform-macOS%20%7C%20Linux%20%7C%20Windows-green.svg" alt="Platform">
-  <img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License">
+  <img src="https://img.shields.io/badge/OpenClaw-Auto%20Deploy-0ea5e9?style=for-the-badge" alt="OpenClaw Auto Deploy">
+  <img src="https://img.shields.io/badge/Windows-WSL2-Linux-macOS-22c55e?style=for-the-badge" alt="Platforms">
+  <img src="https://img.shields.io/badge/Node.js-22%2B-f59e0b?style=for-the-badge" alt="Node 22+">
+  <img src="https://img.shields.io/badge/License-MIT-a855f7?style=for-the-badge" alt="MIT">
 </p>
 
-> 🚀 一键部署你的私人 AI 助手 OpenClaw，支持多平台多模型配置
+> 一个为 OpenClaw 准备的跨平台一键安装与配置仓库。重点优化 Windows、WSL2、Linux、macOS 的安装体验，尽量把环境检测、依赖修复、配置引导和后续管理全部收拢到一套脚本里。
 
 <p align="center">
-  <img src="photo/menu.png" alt="OpenClaw 配置中心" width="600">
+  <img src="photo/menu.png" alt="OpenClaw Control Center" width="760">
 </p>
 
-## 📖 目录
+## 项目定位
 
-- [系统要求](#-系统要求)
-- [快速开始](#-快速开始)
-- [功能特性](#-功能特性)
-- [详细配置](#-详细配置)
-- [常用命令](#-常用命令)
-- [配置说明](#-配置说明)
-- [安全建议](#-安全建议)
-- [常见问题](#-常见问题)
-- [更新日志](#-更新日志)
+`openclaw-auto-deploy` 不是 OpenClaw 本体，而是围绕 OpenClaw 的安装、初始化、配置和维护体验做的一层“自动部署壳”。
 
-## 💻 系统要求
+这个仓库的目标很明确：
 
-| 项目 | 要求 |
-|------|------|
-| 操作系统 | macOS 12+ / Ubuntu 20.04+ / Debian 11+ / CentOS 8+ / Windows 10+ (本地或 WSL2) |
-| Node.js | v22 或更高版本 |
-| 内存 | 最低 2GB，推荐 4GB+ |
-| 磁盘空间 | 最低 1GB |
+- 让第一次接触 OpenClaw 的用户也能快速安装成功。
+- 尽量降低 Windows 和 WSL2 场景下的踩坑成本。
+- 给 Linux 和 macOS 用户提供更顺手的一键化配置流程。
+- 把 AI 模型配置、消息渠道配置、服务管理、诊断修复整合到一个交互式菜单里。
 
-## 🚀 快速开始
+## 为什么推荐这个仓库
 
-### 📦 当前维护仓库（推荐）
+- 更偏向真实可落地的一键安装，而不是只给出几条命令。
+- 安装脚本内置常见问题诊断和自动修复逻辑。
+- 重点覆盖 Windows 本地安装与 WSL2 安装这两个最容易出问题的场景。
+- 提供独立的 `config-menu.sh`，后续维护不需要反复手动改配置文件。
+- README、脚本入口、下载链接、使用说明统一维护，减少文档和命令不一致的问题。
 
-建议优先使用当前维护仓库中的脚本与文档：
+## 支持的平台
 
-<p align="center">
-  <a href="https://github.com/MarcusDog/OpenClawInstaller">
-    <img src="https://img.shields.io/badge/访问仓库-OpenClaw%20Installer-blue?style=for-the-badge&logo=github" alt="Repository">
-  </a>
-</p>
+| 平台 | 支持情况 | 说明 |
+| --- | --- | --- |
+| Windows 10/11 | 强支持 | 支持 Git Bash 中触发安装，重点优化 PowerShell 与 WSL2 路径 |
+| WSL2 + Ubuntu | 强支持 | 推荐给首次安装用户，兼容性最好 |
+| Linux | 强支持 | 已考虑常见依赖安装、端口占用、npm 问题修复 |
+| macOS | 强支持 | 支持 Homebrew、Node.js 检测与本地服务管理 |
 
-- 🔧 **安装脚本** - 一键安装与自动修复流程
-- 🧭 **配置菜单** - AI 模型与渠道配置入口
-- 💻 **跨平台** - 支持 macOS、Windows、Linux
-- 📚 **文档同步** - 安装命令与说明统一维护
+## 快速开始
 
-👉 **下载地址**: [github.com/MarcusDog/OpenClawInstaller](https://github.com/MarcusDog/OpenClawInstaller)
-
----
-
-### 方式一：一键安装（命令行版）
+### 方式一：直接一键安装
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/MarcusDog/OpenClawInstaller/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/MarcusDog/openclaw-auto-deploy/main/install.sh | bash
 ```
 
-安装脚本会自动：
-1. 检测系统环境并安装依赖
-2. 安装 OpenClaw
-3. 引导完成核心配置（AI模型、身份信息）
-4. 测试 API 连接
-5. **自动启动 OpenClaw 服务**
-6. 可选打开配置菜单进行详细配置（渠道等）
+脚本会自动完成这些步骤：
 
-### 方式二：手动安装
+1. 检测系统平台与运行环境
+2. 检查并提示安装 Node.js 22+
+3. 安装 OpenClaw
+4. 引导配置模型、身份和基础参数
+5. 自动处理一部分常见安装失败问题
+6. 提示你进入配置中心继续完成渠道和服务配置
+
+### 方式二：克隆仓库后本地运行
 
 ```bash
-# 1. 克隆仓库
-git clone https://github.com/MarcusDog/OpenClawInstaller.git
-cd OpenClawInstaller
-
-# 2. 添加执行权限
+git clone https://github.com/MarcusDog/openclaw-auto-deploy.git
+cd openclaw-auto-deploy
 chmod +x install.sh config-menu.sh
-
-# 3. 运行安装脚本
 ./install.sh
-
-#如果mac有权限问题，可以手动安装clawbot之后再运行install
-npm install -g openclaw
 ```
 
-### 安装完成后
+## 脚本组成
 
-安装完成后脚本会：
-1. **自动询问是否启动服务**（推荐选择 Y）
-2. 后台启动 OpenClaw Gateway
-3. 可选打开配置菜单进行渠道配置
+### `install.sh`
 
-### 🪟 Windows 安装
+适合第一次安装时使用，主要负责：
 
-安装脚本现已支持 Windows 系统，在 Git Bash 中运行后会自动检测 Windows 并提供两种安装方式：
+- 平台识别
+- 依赖检查
+- Node.js / npm 环境建议
+- OpenClaw 安装
+- 自动修复常见报错
+- 安装完成后的引导说明
 
-#### 方式一：Windows 本地安装（PowerShell）
+### `config-menu.sh`
 
-直接在 Windows 上安装，不需要 WSL：
+适合安装之后长期使用，主要负责：
 
-1. 安装 [Node.js 22+](https://nodejs.org/zh-cn)（下载 LTS 版本）
-2. 打开 Git Bash，运行安装脚本
-3. 选择 `[1] Windows 本地安装`
-4. 脚本自动完成：设置执行策略 → npm 安装 → 配置向导
+- AI 模型配置
+- Telegram / Discord / Slack / 飞书等消息渠道配置
+- 身份与个性配置
+- 安全设置
+- OpenClaw 服务启停和诊断
+- 配置备份、恢复、重置
 
-```bash
-# 在 Git Bash 中运行
-./install.sh
-# 选择 1 → Windows 本地安装
-```
+## 交互式配置中心预览
 
-#### 方式二：WSL2 + Ubuntu 安装（推荐）
-
-在 WSL2 中运行，提供完整 Linux 环境，兼容性最佳：
-
-1. 打开 Git Bash，运行安装脚本
-2. 选择 `[2] WSL2 + Ubuntu 安装`
-3. 脚本自动完成：启用 WSL2 → 安装 Ubuntu → 安装 Node.js → 安装 OpenClaw
-
-```bash
-# 在 Git Bash 中运行
-./install.sh
-# 选择 2 → WSL2 安装（推荐）
-```
-
-> 💡 **提示**: WSL2 安装后，在 Windows 浏览器中访问 `http://localhost:18789` 即可打开控制面板
-
-如果需要后续管理：
-
-```bash
-# 手动启动服务
-source ~/.openclaw/env && openclaw gateway
-
-# 后台启动服务
-openclaw gateway start
-
-# 运行配置菜单进行详细配置
-bash ~/.openclaw/config-menu.sh
-
-# 或从 GitHub 下载运行
-curl -fsSL https://raw.githubusercontent.com/MarcusDog/OpenClawInstaller/main/config-menu.sh | bash
-```
-
-## ✨ 功能特性
-
-### 🤖 多模型支持
+### 主菜单
 
 <p align="center">
-  <img src="photo/llm.png" alt="AI 模型配置" width="600">
+  <img src="photo/menu.png" alt="Menu" width="720">
 </p>
 
-**主流服务商:**
-- **Anthropic Claude** - claude-sonnet-4-5 / claude-opus-4-5 / claude-haiku-4-5 *(支持自定义 API 地址)*
-- **OpenAI GPT** - gpt-5 / gpt-5-mini / gpt-4o *(支持自定义 API 地址，支持 Responses/Completions)*
-- **Google Gemini** - gemini-2.5-flash / gemini-2.5-pro / gemini-2.0-flash
-
-**多模型网关:**
-- **OpenRouter** - 多模型网关，一个 Key 用遍所有模型 (claude-sonnet-4-5 / gpt-5 / gemini-2.5-flash)
-
-**快速推理:**
-- **Groq** - 超快推理，llama-3.3-70b-versatile / llama-3.1-8b-instant / mixtral-8x7b
-- **Mistral AI** - mistral-large-latest / mistral-small-latest / codestral-latest
-
-**本地部署:**
-- **Ollama** - 本地部署，无需 API Key (llama3 / llama3:70b / mistral)
-
-**自定义 API Provider:**
-- **Custom API** - 可手动配置 Provider 名称、Base URL、模型名、API 协议
-- 支持协议: `openai-completions` / `openai-responses` / `anthropic-messages`
-- 适配场景: OneAPI/NewAPI、私有网关、企业代理、中转平台
-
-### 🛠️ 自动修复机制
-
-部署脚本已内置错误检测与自动修复能力，遇到常见错误会自动处理并继续执行：
-
-- npm 权限错误 (`EACCES`) 自动修复全局安装目录
-- npm 网络错误 (`ETIMEDOUT` / `ECONNRESET` / `ENOTFOUND`) 自动切换镜像重试
-- npm 缓存损坏自动清理缓存
-- apt/dpkg 锁冲突自动解锁和恢复
-- 缺少编译工具 (`node-gyp`) 自动补装依赖
-- 端口占用 (`EADDRINUSE`) 自动释放占用进程
-- 内存不足/磁盘不足给出修复建议并尝试缓解
-
-> 💡 **自定义 API 地址**: Anthropic Claude 和 OpenAI GPT 都支持自定义 API 地址，可接入 OneAPI/NewAPI/API 代理等服务。配置时先输入自定义地址，再输入 API Key。
->
-> ⚠️ **OpenAI 中转要求**: 自定义 OpenAI API 地址必须支持 `v1/responses` 路径（OpenAI Responses API），不仅仅是传统的 `v1/chat/completions`。请确认您的中转服务已支持此接口。
-
-### 📱 多渠道接入
+### 模型配置
 
 <p align="center">
-  <img src="photo/social.png" alt="消息渠道配置" width="600">
+  <img src="photo/llm.png" alt="LLM" width="720">
 </p>
 
-- Telegram Bot
-- Discord Bot
+### 消息渠道
+
+<p align="center">
+  <img src="photo/social.png" alt="Social" width="720">
+</p>
+
+### 快速测试
+
+<p align="center">
+  <img src="photo/messages.png" alt="Messages" width="720">
+</p>
+
+## 支持的能力
+
+### 1. 多模型接入
+
+支持常见模型提供商与网关，包括但不限于：
+
+- Anthropic Claude
+- OpenAI GPT
+- DeepSeek
+- Kimi / Moonshot
+- Google Gemini
+- OpenRouter
+- Groq
+- Mistral AI
+- Ollama
+- Azure OpenAI
+- 自定义 Provider + 自定义模型
+
+### 2. 多渠道接入
+
+支持常见消息或协作渠道：
+
+- Telegram
+- Discord
 - WhatsApp
 - Slack
-- 微信 (WeChat)
-- iMessage (仅 macOS)
-- 飞书 (Feishu)
+- 微信
+- iMessage
+- 飞书
 
-### 🧪 快速测试
+### 3. 自动修复
 
-<p align="center">
-  <img src="photo/messages.png" alt="快速测试" width="600">
-</p>
+脚本会尽量处理这些典型问题：
 
-- API 连接测试
-- 渠道连接验证
-- OpenClaw 诊断工具
+- npm 权限错误
+- npm 网络超时
+- npm 缓存损坏
+- 依赖缺失
+- apt / dpkg 锁冲突
+- 端口占用
+- PowerShell 执行策略导致的脚本拦截
+- Windows npm PATH 不完整
 
-### 🧠 核心能力
-- **持久记忆** - 跨对话、跨平台的长期记忆
-- **主动推送** - 定时提醒、晨报、告警通知
-- **技能系统** - 通过 Markdown 文件定义自定义能力
-- **远程控制** - 可执行系统命令、读写文件、浏览网络
+## Windows / WSL2 特别说明
 
-## ⚙️ 详细配置
+这个仓库重点照顾 Windows 用户。
 
-### 配置 AI 模型
+如果你在 Windows 上使用，推荐流程是：
 
-运行配置菜单后选择 `[2] AI 模型配置`，可选择多种 AI 提供商：
+1. 安装 Git Bash
+2. 安装 Node.js 22+
+3. 运行 `install.sh`
+4. 在脚本提示时选择：
+   - `Windows 本地安装`，适合希望直接跑在本机上的用户
+   - `WSL2 + Ubuntu 安装`，适合追求兼容性和更稳环境的用户
 
-<p align="center">
-  <img src="photo/llm.png" alt="AI 模型配置界面" width="600">
-</p>
+通常情况下，如果你不确定怎么选，直接选 WSL2 更稳。
 
-#### Anthropic Claude 配置
+## 常用命令
 
-1. 在配置菜单中选择 Anthropic Claude
-2. **先输入自定义 API 地址**（留空使用官方 API）
-3. 输入 API Key（官方 Key 从 [Anthropic Console](https://console.anthropic.com/) 获取）
-4. 选择模型（推荐 claude-sonnet-4-5-20250929）
-
-> 💡 支持 OneAPI/NewAPI 等第三方代理服务，只需填入对应的 API 地址和 Key
-
-#### OpenAI GPT 配置
-
-1. 在配置菜单中选择 OpenAI GPT
-2. **先输入自定义 API 地址**（留空使用官方 API）
-3. 输入 API Key（官方 Key 从 [OpenAI Platform](https://platform.openai.com/) 获取）
-4. 选择模型
-
-> ⚠️ **中转服务要求**: 如使用自定义 API 地址，中转服务必须支持 OpenAI 的 **Responses API** (`v1/responses` 路径)，而非仅支持传统的 Chat Completions API (`v1/chat/completions`)。部分老旧或功能不全的中转服务可能不支持此接口，请提前确认。
-
-> 💡 **其他模型**: 配置菜单还支持 Google Gemini、OpenRouter、Groq、Mistral AI、Ollama 等，按菜单提示操作即可。
-
-### 配置 Telegram 机器人
-
-1. 在 Telegram 中搜索 `@BotFather`
-2. 发送 `/newbot` 创建新机器人
-3. 设置机器人名称和用户名
-4. 复制获得的 **Bot Token**
-5. 搜索 `@userinfobot` 获取你的 **User ID**
-6. 在配置菜单中选择 Telegram，输入以上信息
-
-### 配置 Discord 机器人
-
-**第一步：创建 Discord 应用和机器人**
-
-1. 访问 [Discord Developer Portal](https://discord.com/developers/applications)
-2. 点击 "New Application" 创建新应用
-3. 进入应用后，点击左侧 "Bot" 菜单
-4. 点击 "Reset Token" 生成并复制 **Bot Token**
-5. ⚠️ **开启 "Message Content Intent"**（重要！否则无法读取消息内容）
-
-**第二步：邀请机器人到服务器**
-
-1. 点击左侧 "OAuth2" → "URL Generator"
-2. Scopes 勾选：`bot`
-3. Bot Permissions 至少勾选：
-   - View Channels（查看频道）
-   - Send Messages（发送消息）
-   - Read Message History（读取消息历史）
-4. 复制生成的 URL，在浏览器打开并选择服务器
-5. 确保机器人在目标频道有权限
-
-**第三步：获取频道 ID**
-
-1. 打开 Discord 客户端，进入 "用户设置" → "高级"
-2. 开启 "开发者模式"
-3. 右键点击你想让机器人响应的频道
-4. 点击 "复制频道 ID"
-
-**第四步：在配置菜单中配置**
-
-在配置菜单中选择 Discord，输入 Bot Token 和 Channel ID
-
-### 配置飞书机器人
-
-> 📖 **详细文档**: 查看 [飞书机器人配置指南](docs/feishu-setup.md) 获取完整的配置说明和常见问题解答。
-
-> 💡 **无需公网服务器**：OpenClaw 使用飞书的 WebSocket 长连接模式接收事件，无需配置 Webhook 地址。
-
-1. 访问 [飞书开放平台](https://open.feishu.cn/)
-2. 创建企业自建应用（个人账号即可，无需企业认证）
-3. **添加机器人能力**：
-   - 进入路径：开发者后台 → 应用详情 → 添加应用能力
-   - 确认：确保"机器人"开关是打开状态
-4. 获取 **App ID** 和 **App Secret**
-5. 在"权限管理"中添加权限：
-   - `im:message` (收发消息)
-   - `im:message:send_as_bot` (发送消息)
-   - `im:chat:readonly` (读取会话信息)
-6. 发布应用：版本管理与发布 → 创建版本 → 发布
-7. **在配置菜单中配置飞书**：输入 App ID 和 App Secret，启动 OpenClaw 服务
-8. 配置"事件订阅"（使用长连接）：
-   - 进入：事件与回调 → 选择「**使用长连接接收事件**」
-   - 添加事件：`im.message.receive_v1`（接收消息）
-   - **无需填写 Webhook 地址**
-   - ⚠️ **注意**：需要 OpenClaw 服务已启动，才能保存长连接设置
-9. 添加机器人到群组：群设置 → 群机器人 → 添加机器人
-
-### 配置 WhatsApp
-
-> 💡 **无需 Business API**：OpenClaw 通过扫码登录你的 WhatsApp 账号，无需申请 Business API。
-
-1. 在配置菜单中选择 `[3] 消息渠道配置` → `[3] WhatsApp`
-2. 系统会自动启用 WhatsApp 插件
-3. 扫描终端显示的二维码完成登录
-4. 登录成功后重启 Gateway 使配置生效
-5. **测试**：用自己的 WhatsApp 给自己发消息即可触发机器人回复
-
-> ⚠️ **注意**：WhatsApp 账号只能在一个设备上登录 Web 版，配置后原有的 WhatsApp Web 会被踢下线。
-
-## 📝 常用命令
-
-### 服务管理
+### 打开配置中心
 
 ```bash
-# 启动服务（后台守护进程）
+bash ./config-menu.sh
+```
+
+### 启动 OpenClaw Gateway
+
+```bash
 openclaw gateway start
+```
 
-# 停止服务
-openclaw gateway stop
+### 查看状态
 
-# 重启服务
-openclaw gateway restart
-
-# 查看服务状态
+```bash
 openclaw gateway status
-
-# 前台运行（用于调试）
-openclaw gateway
-
-# 查看日志
-openclaw logs
-
-# 实时日志
-openclaw logs --follow
 ```
 
-### 配置管理
+### 运行诊断
 
 ```bash
-# 打开配置文件
-openclaw config
-
-# 运行配置向导
-openclaw onboard
-
-# 诊断配置问题
 openclaw doctor
-
-# 健康检查
-openclaw health
 ```
 
-### 数据管理
+### 查看 Dashboard 地址
 
 ```bash
-# 导出对话历史
-openclaw export --format json
-
-# 清理记忆
-openclaw memory clear
-
-# 备份数据
-openclaw backup
+openclaw dashboard --no-open
 ```
 
-## 📋 配置说明
+## 推荐使用顺序
 
-OpenClaw 使用以下配置方式：
+1. 先执行 `install.sh`
+2. 安装完成后执行 `config-menu.sh`
+3. 先配置模型
+4. 再配置消息渠道
+5. 最后进入“快速测试”检查配置是否真实可用
 
-- **环境变量**: `~/.openclaw/env` - 存储 API Key 和 Base URL
-- **OpenClaw 配置**: `~/.openclaw/openclaw.json` - OpenClaw 内部配置（自动管理）
-- **命令行工具**: `openclaw config set` / `openclaw models set` 等
+## 常见问题
 
-> 💡 **注意**：配置主要通过安装向导或 `config-menu.sh` 完成，无需手动编辑配置文件
+### 1. 安装过程中提示 Node.js 版本过低
 
-### 环境变量配置示例
+本仓库默认要求 Node.js 22+。请先升级 Node.js 再重新运行脚本。
 
-`~/.openclaw/env` 文件内容：
+### 2. Windows 下 `npm.ps1` 被禁用
 
-```bash
-# OpenClaw 环境变量配置
-export ANTHROPIC_API_KEY=sk-ant-xxxxx
-export ANTHROPIC_BASE_URL=https://your-api-proxy.com  # 可选，自定义 API 地址
+脚本里已经尝试自动修复 PowerShell 执行策略。如果仍有问题，建议以管理员身份打开 PowerShell 后手动检查执行策略。
 
-# 或者 OpenAI
-export OPENAI_API_KEY=sk-xxxxx
-export OPENAI_BASE_URL=https://your-api-proxy.com/v1  # 可选
-```
+### 3. 端口 18789 被占用
 
-### 自定义 Provider 配置
+安装脚本和配置菜单都内置了端口检测与部分自动释放逻辑。也可以手动检查哪个进程占用了该端口。
 
-当使用自定义 API 地址时，安装脚本会自动在 `~/.openclaw/openclaw.json` 中配置自定义 Provider：
+### 4. 模型能配置但消息发不出去
 
-```json
-{
-  "models": {
-    "providers": {
-      "anthropic-custom": {
-        "baseUrl": "https://your-api-proxy.com",
-        "apiKey": "your-api-key",
-        "models": [
-          {
-            "id": "claude-sonnet-4-5-20250929",
-            "name": "claude-sonnet-4-5-20250929",
-            "api": "anthropic-messages",
-            "input": ["text"],
-            "contextWindow": 200000,
-            "maxTokens": 8192
-          }
-        ]
-      }
-    }
-  }
-}
-```
+优先检查：
 
-### 目录结构
+- 对应渠道的 Token 是否正确
+- 机器人是否已经被拉进群组或服务器
+- 渠道 ID / Chat ID 是否填写正确
+- OpenClaw Gateway 是否已经正常启动
 
-```
-~/.openclaw/
-├── openclaw.json        # OpenClaw 核心配置
-├── env                  # 环境变量 (API Key 等)
-├── backups/             # 配置备份
-└── logs/                # 日志文件 (由 OpenClaw 管理)
-```
+## 仓库地址
 
-## 🛡️ 安全建议
+- GitHub: [https://github.com/MarcusDog/openclaw-auto-deploy](https://github.com/MarcusDog/openclaw-auto-deploy)
+- 安装脚本: [install.sh](https://raw.githubusercontent.com/MarcusDog/openclaw-auto-deploy/main/install.sh)
+- 配置脚本: [config-menu.sh](https://raw.githubusercontent.com/MarcusDog/openclaw-auto-deploy/main/config-menu.sh)
 
-> ⚠️ **重要警告**：OpenClaw 需要完全的计算机权限，请务必注意安全！
+## 与 OpenClaw 的关系
 
-### 部署建议
+- 本仓库专注于部署、安装和配置体验。
+- OpenClaw 的产品功能、核心运行逻辑和官方文档，请以官方项目和官方文档为准。
+- 本仓库更像是一个“更适合真实落地使用”的跨平台安装器与控制中心。
 
-1. **不要在主工作电脑上部署** - 建议使用专用服务器或虚拟机
-2. **使用 AWS/GCP/Azure 免费实例** - 隔离环境更安全
-3. **Docker 部署** - 提供额外的隔离层
+## 维护建议
 
-### 权限控制
+如果你准备把这个仓库长期作为自己的安装入口，建议保持这些内容同步：
 
-1. **禁用危险功能**（默认已禁用）
-   ```yaml
-   security:
-     enable_shell_commands: false
-     enable_file_access: false
-   ```
+- `install.sh` 中的安装命令和仓库地址
+- `config-menu.sh` 中的重新安装提示与仓库主页
+- README 中的下载命令、克隆地址和截图说明
 
-2. **启用沙箱模式**
-   ```yaml
-   security:
-     sandbox_mode: true
-   ```
+## License
 
-3. **限制允许的用户**
-   ```yaml
-   channels:
-     telegram:
-       allowed_users:
-         - "only-your-user-id"
-   ```
-
-### API Key 安全
-
-- 定期轮换 API Key
-- 不要在公开仓库中提交配置文件
-- 使用环境变量存储敏感信息
-
-```bash
-# 使用环境变量
-export ANTHROPIC_API_KEY="sk-ant-xxx"
-export TELEGRAM_BOT_TOKEN="xxx"
-```
-
-## ❓ 常见问题
-
-### Q: 安装时提示 Node.js 版本过低？
-
-```bash
-# macOS
-brew install node@22
-brew link --overwrite node@22
-
-# Ubuntu/Debian
-curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
-sudo apt-get install -y nodejs
-```
-
-### Q: 启动后无法连接？
-
-1. 检查配置文件是否正确
-2. 运行诊断命令：`openclaw doctor`
-3. 查看日志：`openclaw logs`
-
-### Q: Telegram 机器人没有响应？
-
-1. 确认 Bot Token 正确
-2. 确认 User ID 在 allowed_users 列表中
-3. 检查网络连接（可能需要代理）
-
-### Q: 如何更新到最新版本？
-
-```bash
-# 使用 npm 更新
-npm update -g openclaw
-
-# 或使用配置菜单
-./config-menu.sh
-# 选择 [7] 高级设置 → [7] 更新 OpenClaw
-```
-
-### Q: 如何备份数据？
-
-```bash
-# 手动备份
-cp -r ~/.openclaw ~/openclaw_backup_$(date +%Y%m%d)
-
-# 使用命令备份
-openclaw backup
-```
-
-### Q: 如何完全卸载？
-
-```bash
-# 停止服务
-openclaw gateway stop
-
-# 卸载程序
-npm uninstall -g openclaw
-
-# 删除配置（可选）
-rm -rf ~/.openclaw
-```
-
-## 📜 更新日志
-
-### v2.0.1 (2026-03-09)
-- 🛠️ 修复 `install.sh` 与 `config-menu.sh` 的控制流断裂和语法损坏问题
-- 🪟 强化 Windows/Git Bash 环境下的流程稳定性和启动检测
-- 🔁 统一仓库地址与安装命令链接到当前维护仓库
-
-### v1.0.0 (2026-01-29)
-- 🎉 首次发布
-- ✨ 支持一键安装部署
-- ✨ 交互式配置菜单
-- ✨ 多模型支持 (Claude/GPT/Ollama)
-- ✨ 多渠道支持 (Telegram/Discord/WhatsApp)
-- ✨ 技能系统
-- ✨ 安全配置
-
-## 📄 许可证
-
-本项目基于 MIT 许可证开源。
-
-## 🔗 相关链接
-
-- [OpenClaw 官网](https://clawd.bot)
-- [官方文档](https://docs.openclaw.ai)
-- [安装工具仓库](https://github.com/MarcusDog/OpenClawInstaller) - 命令行版本
-- [OpenClaw 主仓库](https://github.com/openclaw/openclaw)
-- [社区讨论](https://github.com/MarcusDog/OpenClawInstaller/discussions)
-
----
-
-<p align="center">
-  Made with ❤️ by <a href="https://github.com/miaoxworld">miaoxworld</a>
-</p>
+MIT

@@ -3,7 +3,7 @@
 # ╔═══════════════════════════════════════════════════════════════════════════╗
 # ║                                                                           ║
 # ║   🦞 OpenClaw 交互式配置菜单 v1.0.0                                        ║
-# ║   便捷的可视化配置工具                                                      ║
+# ║   OpenClaw Control Center - 更轻松的可视化配置体验                         ║
 # ║                                                                           ║
 # ╚═══════════════════════════════════════════════════════════════════════════╝
 #
@@ -51,6 +51,9 @@ BG_RED='\033[41m'
 
 # ================================ 配置变量 ================================
 CONFIG_DIR="$HOME/.openclaw"
+GITHUB_REPO="MarcusDog/openclaw-auto-deploy"
+GITHUB_URL="https://github.com/$GITHUB_REPO"
+GITHUB_RAW_URL="https://raw.githubusercontent.com/$GITHUB_REPO/main"
 
 # OpenClaw 环境变量配置
 OPENCLAW_ENV="$CONFIG_DIR/env"
@@ -66,24 +69,28 @@ clear_screen() {
 print_header() {
     echo -e "${CYAN}"
     cat << 'EOF'
-    ╔═══════════════════════════════════════════════════════════════╗
-    ║                                                               ║
-    ║   🦞 OpenClaw 配置中心                                         ║
-    ║                                                               ║
-    ╚═══════════════════════════════════════════════════════════════╝
+    ╭───────────────────────────────────────────────────────────────╮
+    │                                                               │
+    │   🦞 OpenClaw Control Center                                  │
+    │   统一管理模型、渠道、身份、安全与服务状态                    │
+    │                                                               │
+    ╰───────────────────────────────────────────────────────────────╯
 EOF
     echo -e "${NC}"
+    echo -e "${WHITE}  🎨 风格:${NC} 轻快活泼 · 清晰分区 · 命令行友好"
+    echo -e "${WHITE}  🔗 仓库:${NC} ${PURPLE}${GITHUB_URL}${NC}"
+    echo ""
 }
 
 print_divider() {
-    echo -e "${GRAY}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${GRAY}··························································${NC}"
 }
 
 print_menu_item() {
     local num=$1
     local text=$2
     local icon=$3
-    echo -e "  ${CYAN}[$num]${NC} $icon $text"
+    printf "  ${CYAN}[%s]${NC} %-2s ${WHITE}%s${NC}\n" "$num" "$icon" "$text"
 }
 
 log_info() {
@@ -100,7 +107,7 @@ log_error() {
 
 press_enter() {
     echo ""
-    echo -en "${GRAY}按 Enter 键继续...${NC}"
+    echo -en "${GRAY}按 Enter 返回控制中心...${NC}"
     read < "$TTY_INPUT"
 }
 
@@ -4474,10 +4481,10 @@ manage_service() {
             echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
             echo ""
             echo -e "${CYAN}如需重新安装，请运行:${NC}"
-            echo "  curl -fsSL https://raw.githubusercontent.com/MarcusDog/OpenClawInstaller/main/install.sh | bash"
+            echo "  curl -fsSL ${GITHUB_RAW_URL}/install.sh | bash"
             echo ""
-            echo -e "${CYAN}或下载桌面版:${NC}"
-            echo "  https://github.com/MarcusDog/OpenClawInstaller"
+            echo -e "${CYAN}或访问仓库主页:${NC}"
+            echo "  ${GITHUB_URL}"
             echo ""
             
             press_enter
@@ -5671,7 +5678,7 @@ show_main_menu() {
     clear_screen
     print_header
     
-    echo -e "${WHITE}请选择操作:${NC}"
+    echo -e "${WHITE}欢迎来到 OpenClaw Control Center。请选择你要处理的模块:${NC}"
     echo ""
     
     print_menu_item "1" "系统状态" "📊"
@@ -5686,6 +5693,7 @@ show_main_menu() {
     echo ""
     print_menu_item "0" "退出" "🚪"
     echo ""
+    echo -e "${GRAY}提示: 建议先检查系统状态，再配置模型与消息渠道。${NC}"
     print_divider
 }
 
