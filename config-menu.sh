@@ -54,16 +54,25 @@ CONFIG_DIR="$HOME/.openclaw"
 GITHUB_REPO="MarcusDog/openclaw-auto-deploy"
 GITHUB_URL="https://github.com/$GITHUB_REPO"
 GITHUB_RAW_URL="https://raw.githubusercontent.com/$GITHUB_REPO/main"
+GITHUB_SHORT="$GITHUB_REPO"
 
 # OpenClaw 环境变量配置
 OPENCLAW_ENV="$CONFIG_DIR/env"
 OPENCLAW_JSON="$CONFIG_DIR/openclaw.json"
 BACKUP_DIR="$CONFIG_DIR/backups"
+CURRENT_PAGE_TITLE=""
+CURRENT_PAGE_SUBTITLE=""
+CURRENT_PAGE_HINT=""
 
 # ================================ 工具函数 ================================
 
 clear_screen() {
     clear
+}
+
+compact_path() {
+    local path="$1"
+    echo "${path/#$HOME/~}"
 }
 
 print_header() {
@@ -78,13 +87,62 @@ print_header() {
 EOF
     echo -e "${NC}"
     echo -e "${WHITE}  🎨 风格:${NC} 轻快活泼 · 清晰分区 · 命令行友好"
-    echo -e "${WHITE}  🔗 仓库:${NC} ${PURPLE}${GITHUB_URL}${NC}"
-    echo -e "${WHITE}  📍 当前区域:${NC} ${CYAN}${CONFIG_DIR}${NC}"
+    echo -e "${WHITE}  🔗 仓库:${NC} ${PURPLE}${GITHUB_SHORT}${NC}"
+    echo -e "${WHITE}  📍 当前区域:${NC} ${CYAN}$(compact_path "$CONFIG_DIR")${NC}"
     echo ""
 }
 
 print_divider() {
     echo -e "${GRAY}··························································${NC}"
+}
+
+set_page_context() {
+    CURRENT_PAGE_TITLE="$1"
+    CURRENT_PAGE_SUBTITLE="${2:-}"
+    CURRENT_PAGE_HINT="${3:-}"
+}
+
+print_page_banner() {
+    [ -z "$CURRENT_PAGE_TITLE" ] && return 0
+
+    echo -e "${WHITE}${CURRENT_PAGE_TITLE}${NC}"
+    print_divider
+    [ -n "$CURRENT_PAGE_SUBTITLE" ] && echo -e "${CYAN}${CURRENT_PAGE_SUBTITLE}${NC}"
+    echo -e "${GRAY}页面导航: 主菜单 / ${CURRENT_PAGE_TITLE}${NC}"
+    [ -n "$CURRENT_PAGE_HINT" ] && echo -e "${GRAY}操作提示: ${CURRENT_PAGE_HINT}${NC}"
+    echo ""
+}
+
+begin_page() {
+    local title="$1"
+    local subtitle="${2:-}"
+    local hint="${3:-}"
+    set_page_context "$title" "$subtitle" "$hint"
+    clear_screen
+    print_header
+    print_page_banner
+}
+
+print_menu_section() {
+    local title="$1"
+    local description="${2:-}"
+    echo -e "${CYAN}${title}${NC}"
+    [ -n "$description" ] && echo -e "${GRAY}${description}${NC}"
+    echo ""
+}
+
+print_input_zone() {
+    local hint="${1:-按提示输入，留空通常表示保持当前值或跳过。}"
+    echo -e "${WHITE}输入区${NC}"
+    echo -e "${GRAY}${hint}${NC}"
+    echo ""
+}
+
+print_action_hint() {
+    local hint="$1"
+    echo -e "${WHITE}操作提示${NC}"
+    echo -e "${GRAY}${hint}${NC}"
+    echo ""
 }
 
 print_status_badge() {
@@ -270,7 +328,7 @@ show_control_center_snapshot() {
     echo ""
     echo -e "  Gateway   $(get_gateway_status_label)"
     echo -e "  配置文件  $(get_profile_status_label)"
-    echo -e "  配置目录  ${CYAN}${CONFIG_DIR}${NC}"
+    echo -e "  配置目录  ${CYAN}$(compact_path "$CONFIG_DIR")${NC}"
     echo ""
 }
 
@@ -1034,14 +1092,10 @@ run_openclaw_health() {
 # ================================ 状态显示 ================================
 
 show_status() {
-    clear_screen
-    print_header
-    
-    echo -e "${WHITE}📊 系统状态${NC}"
-    print_divider
-    echo ""
+    begin_page "📊 系统状态" "查看安装、服务、模型和配置目录是否都在正确状态。" "如果这里已经异常，优先修复系统状态再继续配置。"
     
     # OpenClaw 服务状态
+    print_menu_section "服务与安装" "先确认 OpenClaw 是否安装，以及 Gateway 是否正常运行。"
     if command -v openclaw &> /dev/null; then
         echo -e "  ${GREEN}✓${NC} OpenClaw 已安装: $(openclaw --version 2>/dev/null || echo 'unknown')"
         
@@ -1062,7 +1116,7 @@ show_status() {
     # 当前配置
     if [ -f "$OPENCLAW_ENV" ]; then
         echo ""
-        echo -e "  ${CYAN}当前配置:${NC}"
+        print_menu_section "当前配置" "检查当前模型和已写入的 AI 提供商信息。"
         
         # 显示 OpenClaw 模型配置
         if check_openclaw_installed; then
@@ -1085,7 +1139,7 @@ show_status() {
     echo ""
     
     # 目录状态
-    echo -e "  ${CYAN}目录结构:${NC}"
+    print_menu_section "目录结构" "确认环境变量文件、OpenClaw 配置文件和配置目录都存在。"
     [ -d "$CONFIG_DIR" ] && echo -e "    ${GREEN}✓${NC} 配置目录: $CONFIG_DIR" || echo -e "    ${RED}✗${NC} 配置目录"
     [ -f "$OPENCLAW_ENV" ] && echo -e "    ${GREEN}✓${NC} 环境变量: $OPENCLAW_ENV" || echo -e "    ${RED}✗${NC} 环境变量"
     [ -f "$OPENCLAW_JSON" ] && echo -e "    ${GREEN}✓${NC} OpenClaw 配置: $OPENCLAW_JSON" || echo -e "    ${YELLOW}⚠${NC} OpenClaw 配置"
@@ -1098,51 +1152,44 @@ show_status() {
 # ================================ AI 模型配置 ================================
 
 config_ai_model() {
-    clear_screen
-    print_header
-    
-    echo -e "${WHITE}🤖 AI 模型配置${NC}"
-    print_divider
-    echo ""
-    
-    echo -e "${CYAN}选择 AI 提供商:${NC}"
-    echo -e "${GRAY}提示: 支持自定义 API 地址（通过自定义 Provider 配置）${NC}"
-    echo ""
-    echo -e "${WHITE}主流服务商:${NC}"
+    begin_page "🤖 AI 模型配置" "选择最适合你的模型提供商或网关。" "支持自定义 API 地址；如果你在国内网络环境，建议优先选响应更稳定的渠道。"
+
+    print_menu_section "主流服务商" "官方主流模型入口，适合大多数用户。"
     print_menu_item "1" "Anthropic Claude" "🟣"
     print_menu_item "2" "OpenAI GPT" "🟢"
     print_menu_item "3" "DeepSeek" "🔵"
     print_menu_item "4" "Kimi (Moonshot)" "🌙"
     print_menu_item "5" "Google Gemini" "🔴"
     echo ""
-    echo -e "${WHITE}多模型网关:${NC}"
+    print_menu_section "多模型网关" "适合想用一个 Key 切多个模型的人。"
     print_menu_item "6" "OpenRouter (多模型网关)" "🔄"
     print_menu_item "7" "OpenCode (免费多模型)" "🆓"
     echo ""
-    echo -e "${WHITE}快速推理:${NC}"
+    print_menu_section "快速推理" "更偏速度和低时延，适合即时响应。"
     print_menu_item "8" "Groq (超快推理)" "⚡"
     print_menu_item "9" "Mistral AI" "🌬️"
     echo ""
-    echo -e "${WHITE}本地/企业:${NC}"
+    print_menu_section "本地 / 企业" "适合私有部署、本地模型或 Azure 场景。"
     print_menu_item "10" "Ollama 本地模型" "🟠"
     print_menu_item "11" "Azure OpenAI" "☁️"
     echo ""
-    echo -e "${WHITE}国产/其他:${NC}"
+    print_menu_section "国产 / 其他" "补充型模型来源，适合按地区和成本做搭配。"
     print_menu_item "12" "xAI Grok" "𝕏"
     print_menu_item "13" "智谱 GLM (Zai)" "🇨🇳"
     print_menu_item "14" "MiniMax" "🤖"
     echo ""
-    echo -e "${WHITE}实验性:${NC}"
+    print_menu_section "实验性" "偏新接口或实验性接入，建议明确需求再用。"
     print_menu_item "15" "Google Gemini CLI" "🧪"
     print_menu_item "16" "Google Antigravity" "🚀"
     echo ""
-    echo -e "${WHITE}高级自定义:${NC}"
+    print_menu_section "高级自定义" "适合 OneAPI / 私有中转 / 企业代理。"
     print_menu_item "17" "自定义 Provider + 自定义模型" "🛠️"
     echo ""
     print_menu_item "0" "返回主菜单" "↩️"
     echo ""
 
-    echo -en "${YELLOW}请选择 [0-17]: ${NC}"
+    print_input_zone "输入编号后进入对应提供商配置页。"
+    echo -en "${YELLOW}❯ 请选择 [0-17]: ${NC}"
     read choice < "$TTY_INPUT"
     
     case $choice in
@@ -3068,13 +3115,9 @@ run_channel_diagnostics() {
 }
 
 config_channels() {
-    clear_screen
-    print_header
-    
-    echo -e "${WHITE}📱 消息渠道配置${NC}"
-    print_divider
-    echo ""
-    
+    begin_page "📱 消息渠道配置" "把 OpenClaw 接到你常用的聊天和协作渠道。" "推荐先配置一个主渠道打通，再逐步扩展其他渠道。"
+
+    print_menu_section "渠道列表" "选择要接入的聊天平台，后续会进入对应渠道的详细配置页。"
     print_menu_item "1" "Telegram 机器人" "📨"
     print_menu_item "2" "Discord 机器人" "🎮"
     print_menu_item "3" "WhatsApp" "💬"
@@ -3086,7 +3129,8 @@ config_channels() {
     print_menu_item "0" "返回主菜单" "↩️"
     echo ""
     
-    echo -en "${YELLOW}请选择 [0-8]: ${NC}"
+    print_input_zone "如果你刚完成某个渠道配置，建议顺手跑一遍“渠道诊断一键检查”。"
+    echo -en "${YELLOW}❯ 请选择 [0-8]: ${NC}"
     read choice < "$TTY_INPUT"
     
     case $choice in
@@ -3911,12 +3955,7 @@ config_feishu_app() {
 # ================================ 身份配置 ================================
 
 config_identity() {
-    clear_screen
-    print_header
-    
-    echo -e "${WHITE}👤 身份与个性配置${NC}"
-    print_divider
-    echo ""
+    begin_page "👤 身份与个性配置" "定义助手名字、用户称呼和默认时区。" "这些信息会直接影响回复语气、时间理解和个性呈现。"
     
     if ! check_openclaw_installed; then
         log_error "OpenClaw 未安装"
@@ -3925,12 +3964,13 @@ config_identity() {
     fi
     
     # 显示当前配置
-    echo -e "${CYAN}当前配置:${NC}"
+    print_menu_section "当前配置" "如果已有值，留空即可保持不变。"
     openclaw config get identity 2>/dev/null || echo "  (未配置)"
     echo ""
     print_divider
     echo ""
     
+    print_input_zone "建议先设置助手名称和你的称呼，再确认时区。"
     read -p "$(echo -e "${YELLOW}助手名称: ${NC}")" bot_name
     read -p "$(echo -e "${YELLOW}如何称呼你: ${NC}")" user_name
     read -p "$(echo -e "${YELLOW}时区 (如 Asia/Shanghai): ${NC}")" timezone
@@ -3949,16 +3989,12 @@ config_identity() {
 # ================================ 安全配置 ================================
 
 config_security() {
-    clear_screen
-    print_header
-    
-    echo -e "${WHITE}🔒 安全配置${NC}"
-    print_divider
-    echo ""
-    
+    begin_page "🔒 安全配置" "统一查看与安全边界相关的能力开关。" "这里的选项会影响命令执行、文件访问与网络能力，请按最小权限原则配置。"
+
     echo -e "${RED}⚠️ 警告: 以下设置涉及安全风险，请谨慎配置${NC}"
     echo ""
     
+    print_menu_section "安全开关" "优先保持保守配置，明确有需求再逐项放开。"
     print_menu_item "1" "允许执行系统命令" "⚙️"
     print_menu_item "2" "允许文件访问" "📁"
     print_menu_item "3" "允许网络浏览" "🌐"
@@ -3967,7 +4003,8 @@ config_security() {
     print_menu_item "0" "返回主菜单" "↩️"
     echo ""
     
-    echo -en "${YELLOW}请选择 [0-5]: ${NC}"
+    print_input_zone "输入编号切换对应能力或进入白名单页面。"
+    echo -en "${YELLOW}❯ 请选择 [0-5]: ${NC}"
     read choice < "$TTY_INPUT"
     
     case $choice in
@@ -4012,12 +4049,7 @@ config_security() {
 }
 
 config_whitelist() {
-    clear_screen
-    print_header
-    
-    echo -e "${WHITE}✅ 配置白名单${NC}"
-    print_divider
-    echo ""
+    begin_page "✅ 配置白名单" "限定 OpenClaw 可访问的安全目录范围。" "建议只加入你确实要让 OpenClaw 访问的目录。"
     
     if ! check_openclaw_installed; then
         log_error "OpenClaw 未安装"
@@ -4025,11 +4057,11 @@ config_whitelist() {
         return
     fi
     
-    echo -e "${CYAN}使用 openclaw 命令配置白名单:${NC}"
-    echo ""
+    print_menu_section "配置方式" "你也可以直接复制下面的命令在终端里执行。"
     echo "  openclaw config set security.allowed_paths '/path/to/dir1,/path/to/dir2'"
     echo ""
     
+    print_input_zone "多个目录请用英文逗号分隔。"
     read -p "$(echo -e "${YELLOW}输入允许访问的目录 (逗号分隔): ${NC}")" paths
     
     if [ -n "$paths" ]; then
@@ -4093,16 +4125,12 @@ stop_gateway_watchdog() {
 }
 
 manage_service() {
-    clear_screen
-    print_header
-    
-    echo -e "${WHITE}⚡ 服务管理${NC}"
-    print_divider
-    echo ""
+    begin_page "⚡ 服务管理" "启动、停止、重启 Gateway，并处理日志和守护进程。" "如果你不确定服务有没有起来，先看当前状态再决定下一步。"
     
     # 使用端口检测判断服务状态（更可靠）
     local menu_status_pid
     menu_status_pid=$(get_port_pid 18789)
+    print_menu_section "当前状态" "这里展示的是基于端口检测得到的即时状态。"
     if [ -n "$menu_status_pid" ]; then
         echo -e "  当前状态: ${GREEN}● 运行中${NC} (PID: $menu_status_pid)"
     else
@@ -4110,6 +4138,7 @@ manage_service() {
     fi
     echo ""
     
+    print_menu_section "服务动作" "常用动作放在前面，诊断和守护操作放在后面。"
     print_menu_item "1" "启动服务" "▶️"
     print_menu_item "2" "停止服务" "⏹️"
     print_menu_item "3" "重启服务" "🔄"
@@ -4125,7 +4154,8 @@ manage_service() {
     print_menu_item "0" "返回主菜单" "↩️"
     echo ""
     
-    echo -en "${YELLOW}请选择 [0-10]: ${NC}"
+    print_input_zone "如果刚完成模型或渠道配置，建议优先执行“重启服务”。"
+    echo -en "${YELLOW}❯ 请选择 [0-10]: ${NC}"
     read choice < "$TTY_INPUT"
     
     case $choice in
@@ -5061,13 +5091,9 @@ print('Custom provider configured: ' + vars['provider_id'])
 # ================================ 高级设置 ================================
 
 advanced_settings() {
-    clear_screen
-    print_header
-    
-    echo -e "${WHITE}🔧 高级设置${NC}"
-    print_divider
-    echo ""
-    
+    begin_page "🔧 高级设置" "集中处理备份、恢复、编辑环境变量、重置与卸载。" "这里大多是高影响操作，动手前先确认范围。"
+
+    print_menu_section "高影响操作" "修改配置文件、恢复备份或重置时，建议先做一次备份。"
     print_menu_item "1" "编辑环境变量" "📝"
     print_menu_item "2" "备份配置" "💾"
     print_menu_item "3" "恢复配置" "📥"
@@ -5078,7 +5104,8 @@ advanced_settings() {
     print_menu_item "0" "返回主菜单" "↩️"
     echo ""
     
-    echo -en "${YELLOW}请选择 [0-7]: ${NC}"
+    print_input_zone "涉及删除或重置时，脚本会再次确认。"
+    echo -en "${YELLOW}❯ 请选择 [0-7]: ${NC}"
     read choice < "$TTY_INPUT"
     
     case $choice in
@@ -5153,20 +5180,14 @@ advanced_settings() {
 }
 
 restore_config() {
-    clear_screen
-    print_header
-    
-    echo -e "${WHITE}📥 恢复配置${NC}"
-    print_divider
-    echo ""
+    begin_page "📥 恢复配置" "从现有备份中恢复环境变量文件。" "恢复前建议确认当前配置是否已经另行备份。"
     
     if [ ! -d "$BACKUP_DIR" ] || [ -z "$(ls -A $BACKUP_DIR 2>/dev/null)" ]; then
         log_error "没有找到备份文件"
         return
     fi
     
-    echo -e "${CYAN}可用备份:${NC}"
-    echo ""
+    print_menu_section "可用备份" "按编号选择要恢复的备份。"
     
     local i=1
     local backups=()
@@ -5181,6 +5202,7 @@ restore_config() {
     done
     
     echo ""
+    print_input_zone "输入对应编号后恢复该备份。"
     read -p "$(echo -e "${YELLOW}选择要恢复的备份 [1-$((i-1))]: ${NC}")" choice
     
     if [ -n "$choice" ] && [ "$choice" -ge 1 ] && [ "$choice" -lt "$i" ]; then
@@ -5196,16 +5218,10 @@ restore_config() {
 # ================================ 查看配置 ================================
 
 view_config() {
-    clear_screen
-    print_header
-    
-    echo -e "${WHITE}📋 当前配置${NC}"
-    print_divider
-    echo ""
+    begin_page "📋 当前配置" "集中查看环境变量、渠道、模型和 OpenClaw 当前配置。" "如果输出太长，优先先看环境变量区和当前模型区。"
     
     # 显示环境变量配置
-    echo -e "${CYAN}环境变量配置 ($OPENCLAW_ENV):${NC}"
-    echo ""
+    print_menu_section "环境变量配置" "$OPENCLAW_ENV"
     if [ -f "$OPENCLAW_ENV" ]; then
         if command -v bat &> /dev/null; then
             bat --style=numbers --language=bash "$OPENCLAW_ENV"
@@ -5222,8 +5238,7 @@ view_config() {
     
     # 显示 OpenClaw 配置
     if check_openclaw_installed; then
-        echo -e "${CYAN}OpenClaw 配置:${NC}"
-        echo ""
+        print_menu_section "OpenClaw 配置" "下面依次展示全量配置、已配置渠道和当前模型状态。"
         openclaw config list 2>/dev/null || echo -e "  ${GRAY}(无法获取)${NC}"
         echo ""
         
@@ -5245,14 +5260,10 @@ view_config() {
 # ================================ 快速测试 ================================
 
 quick_test_menu() {
-    clear_screen
-    print_header
-    
-    echo -e "${WHITE}🧪 快速测试${NC}"
-    print_divider
-    echo ""
+    begin_page "🧪 快速测试" "快速验证模型、渠道和 Gateway 是否真的能正常工作。" "推荐在每次完成配置后都跑一次，能最快发现问题。"
     
     # 显示 OpenClaw 状态
+    print_menu_section "运行前检查" "先确认 OpenClaw 是否已经安装。"
     if check_openclaw_installed; then
         local version=$(openclaw --version 2>/dev/null || echo "unknown")
         echo -e "  ${GREEN}✓${NC} OpenClaw 已安装: $version"
@@ -5263,7 +5274,7 @@ quick_test_menu() {
     print_divider
     echo ""
     
-    echo -e "${CYAN}API 连接测试:${NC}"
+    print_menu_section "API 与渠道测试" "先测模型，再测渠道。"
     print_menu_item "1" "测试 AI API 连接" "🤖"
     print_menu_item "2" "测试 Telegram 机器人" "📨"
     print_menu_item "3" "测试 Discord 机器人" "🎮"
@@ -5271,7 +5282,7 @@ quick_test_menu() {
     print_menu_item "5" "测试飞书机器人" "🔷"
     print_menu_item "6" "测试 Ollama 本地模型" "🟠"
     echo ""
-    echo -e "${CYAN}OpenClaw 诊断 (需要已安装):${NC}"
+    print_menu_section "OpenClaw 诊断" "用于排查配置和服务问题。"
     print_menu_item "7" "openclaw doctor (诊断)" "🔍"
     print_menu_item "8" "openclaw status (渠道状态)" "📊"
     print_menu_item "9" "openclaw health (Gateway 健康)" "💚"
@@ -5280,7 +5291,8 @@ quick_test_menu() {
     print_menu_item "0" "返回主菜单" "↩️"
     echo ""
     
-    echo -en "${YELLOW}请选择 [0-9/a]: ${NC}"
+    print_input_zone "如果你刚配置完某个渠道，优先只测试那个渠道；全部测试适合做最终验收。"
+    echo -en "${YELLOW}❯ 请选择 [0-9/a]: ${NC}"
     read choice < "$TTY_INPUT"
     
     case $choice in
