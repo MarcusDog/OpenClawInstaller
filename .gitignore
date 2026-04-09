@@ -1,2 +1,6 @@
 tmp.txt
 README-mo.md
+.DS_Store
+__pycache__/
+.pycache_tmp/
+*.pyc

@@ -11,7 +11,7 @@ GENERATOR="$ROOT_DIR/scripts/generate_ui_screenshots.py"
     exit 1
 }
 
-for image in menu llm social messages; do
+for image in install menu status llm anthropic social telegram identity security service messages advanced config; do
     [ -f "$ROOT_DIR/photo/$image.png" ] || {
         echo "Missing screenshot asset: photo/$image.png" >&2
         exit 1
@@ -24,7 +24,7 @@ from PIL import Image
 import sys
 
 root = Path(sys.argv[1])
-for name in ["menu", "llm", "social", "messages"]:
+for name in ["install", "menu", "status", "llm", "anthropic", "social", "telegram", "identity", "security", "service", "messages", "advanced", "config"]:
     path = root / "photo" / f"{name}.png"
     image = Image.open(path)
     width, height = image.size

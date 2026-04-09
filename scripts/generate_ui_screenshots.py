@@ -17,28 +17,87 @@ from PIL import Image, ImageDraw, ImageFont
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 PHOTO_DIR = ROOT_DIR / "photo"
-SCRIPT_PATH = ROOT_DIR / "config-menu.sh"
+CONFIG_SCRIPT_PATH = ROOT_DIR / "config-menu.sh"
+INSTALL_SCRIPT_PATH = ROOT_DIR / "install.sh"
 
 SCREENSHOTS = {
+    "install": {
+        "script": "install",
+        "inputs": [],
+        "title": "Installer Welcome",
+        "subtitle": "OpenClaw Auto Deploy first-run experience",
+    },
     "menu": {
+        "script": "config",
         "inputs": [],
         "title": "Main Menu",
         "subtitle": "OpenClaw Control Center",
     },
+    "status": {
+        "script": "config",
+        "inputs": ["1\n"],
+        "title": "System Status",
+        "subtitle": "Install / gateway / config health overview",
+    },
     "llm": {
+        "script": "config",
         "inputs": ["2\n"],
         "title": "Model Setup",
         "subtitle": "AI provider selection",
     },
+    "anthropic": {
+        "script": "config",
+        "inputs": ["2\n", "1\n"],
+        "title": "Anthropic Setup",
+        "subtitle": "Provider-specific configuration page",
+    },
     "social": {
+        "script": "config",
         "inputs": ["3\n"],
         "title": "Channel Setup",
         "subtitle": "Telegram / Discord / Slack / Feishu",
     },
+    "telegram": {
+        "script": "config",
+        "inputs": ["3\n", "1\n"],
+        "title": "Telegram Setup",
+        "subtitle": "Pairing flow and bot configuration",
+    },
+    "identity": {
+        "script": "config",
+        "inputs": ["4\n"],
+        "title": "Identity Setup",
+        "subtitle": "Assistant name, user name, timezone",
+    },
+    "security": {
+        "script": "config",
+        "inputs": ["5\n"],
+        "title": "Security Setup",
+        "subtitle": "Capability boundary and whitelist options",
+    },
+    "service": {
+        "script": "config",
+        "inputs": ["6\n"],
+        "title": "Service Console",
+        "subtitle": "Gateway lifecycle and watchdog control",
+    },
     "messages": {
+        "script": "config",
         "inputs": ["7\n"],
         "title": "Quick Test",
         "subtitle": "API / channel / health checks",
+    },
+    "advanced": {
+        "script": "config",
+        "inputs": ["8\n"],
+        "title": "Advanced Settings",
+        "subtitle": "Backup, restore, reset, upgrade, uninstall",
+    },
+    "config": {
+        "script": "config",
+        "inputs": ["9\n"],
+        "title": "Current Config",
+        "subtitle": "Environment variables and OpenClaw config view",
     },
 }
 
@@ -299,7 +358,7 @@ def substitute_char(char: str) -> str:
     return EMOJI_MAP.get(char, char)
 
 
-def capture_buffer(inputs: list[str]) -> TerminalBuffer:
+def capture_buffer(script_kind: str, inputs: list[str]) -> TerminalBuffer:
     env = os.environ.copy()
     env.update(
         {
@@ -312,8 +371,9 @@ def capture_buffer(inputs: list[str]) -> TerminalBuffer:
     )
 
     master, slave = pty.openpty()
+    script_path = CONFIG_SCRIPT_PATH if script_kind == "config" else INSTALL_SCRIPT_PATH
     process = subprocess.Popen(
-        ["bash", str(SCRIPT_PATH)],
+        ["bash", str(script_path)],
         cwd=ROOT_DIR,
         stdin=slave,
         stdout=slave,
@@ -474,7 +534,7 @@ def render_buffer(name: str, terminal: TerminalBuffer, title: str, subtitle: str
 def main() -> None:
     PHOTO_DIR.mkdir(parents=True, exist_ok=True)
     for name, config in SCREENSHOTS.items():
-        terminal = capture_buffer(config["inputs"])
+        terminal = capture_buffer(config["script"], config["inputs"])
         render_buffer(name, terminal, config["title"], config["subtitle"])
 
 
